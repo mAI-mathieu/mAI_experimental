@@ -1,74 +1,68 @@
-# mAI ComfyUI Node Template
+# mAI experimental ComfyUI nodes
 
-Base folder for creating a new ComfyUI custom node pack.
+Small experimental nodes for ComfyUI.
 
-Copy this folder into:
+## mAI fal image
 
-```text
-C:\AI\ComfyUIOpti\ComfyUICuda13\ComfyUI\custom_nodes
-```
+Calls a fal.ai text-to-image endpoint and returns its first generated image as a
+ComfyUI `IMAGE`. Find it under `mAI / Image` as `mAI fal image`.
 
-Then rename it, for example:
+### Setup
 
-```text
-mAI_ImageBrowser
-mAI_BlurAwareMaskTools
-mAI_FrameCanvasRecut
-```
-
-## Included
-
-```text
-__init__.py                    ComfyUI node registration
-nodes/example_text_node.py      Minimal example node
-utils/                          Shared helper code folder
-web/js/                         Optional ComfyUI frontend extension folder
-examples/                       Example workflows or screenshots
-tests/                          Small pure Python tests
-docs/                           Notes and Codex prompts
-AGENTS.md                       Instructions Codex should follow
-HOWTO_GIT_CODEX.md              Setup guide for Git and Codex
-SETUP_GIT_FOR_CODEX.bat         Easiest Windows setup script for Git + GitHub + Codex
-scripts/init_git.ps1            Optional PowerShell helper script for Git setup
-```
-
-## Minimal node behavior
-
-The example node takes a string and returns a cleaned string.
-It is intentionally simple so you can replace it with the real node logic.
-
-After copying this folder into `custom_nodes`, restart ComfyUI and look for:
-
-```text
-mAI / Template / Example Text Node
-```
-
-## Development rule
-
-Keep each custom node pack as its own Git repo.
-Do not make your full ComfyUI install the repo.
-
-
-## Fast Windows setup
-
-After copying and renaming this folder, double-click:
-
-```text
-SETUP_GIT_FOR_CODEX.bat
-```
-
-It will initialize Git, create the `main` branch, commit the template, ask for your GitHub remote URL, and push if possible.
-
-It cannot create the GitHub repository for you unless you use extra tools like GitHub CLI, so create an empty repo on GitHub first.
-
-
-## One-click GitHub setup
-
-The BAT file can create the GitHub repo automatically if GitHub CLI is installed and authenticated:
+Install the node pack requirements into the same Python environment used by
+ComfyUI:
 
 ```powershell
-winget install --id GitHub.cli
-gh auth login
+python -m pip install -r requirements.txt
 ```
 
-Then double-click `SETUP_GIT_FOR_CODEX.bat`. It can create the remote repo, add it as `origin`, and push `main`.
+Paste your fal API key into the node's `api_key` field.
+
+Warning: ComfyUI stores widget values in workflow JSON. Do not share or publish
+a workflow containing your key. Clear the field before exporting a workflow.
+
+### Inputs
+
+- `api_key`: fal API key used for this request.
+- `model_endpoint`: fal endpoint ID, default
+  `fal-ai/flux/dev/image-to-image`. Use an ID, not a full URL.
+- `prompt`: text prompt sent to the endpoint.
+- `image_size`: one of fal's standard image size presets.
+- `seed`: `-1` asks fal for a random seed; zero or higher sends that exact seed.
+- `output_format`: `png` or `jpeg`.
+- `image_1`, `image_2`, `image_3` (optional): ComfyUI images uploaded as PNG to
+  fal before generation. Each socket also accepts an image batch.
+
+### Outputs
+
+- `image`: the first returned image as a ComfyUI image tensor.
+- `image_url`: the fal-hosted URL (or data URI) returned by the API.
+- `seed`: the actual result seed when fal returns one, otherwise `-1`.
+- `response_json`: complete fal response for metadata and debugging.
+
+The node makes a new billable API request every time its workflow is queued.
+The node automatically sends `image_urls` for edit endpoints that require a
+list, including `fal-ai/flux-2-max/edit`,
+`fal-ai/flux-2/klein/9b/edit/lora`, and
+`fal-ai/nano-banana-2/edit`, and `bytedance/seedream/v5/pro/edit`, even when
+only one image is connected. For Nano Banana 2 Edit, the node translates
+`image_size` to the endpoint's `aspect_ratio` and sends the default `1K`
+resolution. Seedream 5.0 Pro Edit accepts the node's existing `image_size`
+presets but does not support a seed, so that widget is ignored for this
+endpoint and the seed output is `-1`. At least one image must be connected for
+both endpoints. The node sends `image_url` for the default FLUX.1
+image-to-image endpoint and `image_urls` whenever multiple images are
+connected. Model schemas differ, so other custom endpoints selected from the
+[fal model gallery](https://fal.ai/models) must support those standard field
+names. The node returns the first output image.
+
+### Testing
+
+Pure utility tests do not contact fal:
+
+```powershell
+python -m pytest
+```
+
+For an end-to-end ComfyUI test, connect `image` to Preview Image, enter your API
+key in the node, and queue the workflow.

@@ -1,4 +1,4 @@
-from nodes.example_text_node import MAIExampleTextNode
+from ..nodes.example_text_node import MAIExampleTextNode
 
 
 def test_example_text_node_strips_text():
