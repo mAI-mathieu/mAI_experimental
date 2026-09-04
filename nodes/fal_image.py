@@ -5,11 +5,13 @@ from ..utils.fal_image import (
     IMAGE_SIZE_PRESETS,
     NANO_BANANA_2_EDIT_ENDPOINT,
     REQUIRED_IMAGE_ENDPOINTS,
+    SEEDREAM_5_LITE_EDIT_ENDPOINT,
     SEEDREAM_5_PRO_EDIT_ENDPOINT,
     SUPPORTED_ENDPOINTS,
     add_image_urls,
     build_arguments,
     build_nano_banana_2_edit_arguments,
+    build_seedream_5_lite_edit_arguments,
     build_seedream_5_pro_edit_arguments,
     download_image_bytes,
     extract_image_url,
@@ -103,6 +105,11 @@ class MAIFalImage:
                 image_size,
                 seed,
                 output_format,
+            )
+        elif endpoint == SEEDREAM_5_LITE_EDIT_ENDPOINT:
+            arguments = build_seedream_5_lite_edit_arguments(
+                prompt,
+                image_size,
             )
         elif endpoint == SEEDREAM_5_PRO_EDIT_ENDPOINT:
             arguments = build_seedream_5_pro_edit_arguments(

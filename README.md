@@ -43,6 +43,7 @@ Supported endpoint choices:
 - `fal-ai/flux-2/klein/9b/edit/lora`
 - `openai/gpt-image-2/edit`
 - `fal-ai/nano-banana-2/edit`
+- `bytedance/seedream/v5/lite/edit`
 - `bytedance/seedream/v5/pro/edit`
 
 ### Outputs
@@ -61,9 +62,12 @@ only one image is connected. For Nano Banana 2 Edit, the node translates
 `image_size` to the endpoint's `aspect_ratio` and sends the default `1K`
 resolution. Seedream 5.0 Pro Edit accepts the node's existing `image_size`
 presets but does not support a seed, so that widget is ignored for this
-endpoint and the seed output is `-1`. At least one image must be connected for
-both endpoints. The node sends `image_url` for the default FLUX.1
-image-to-image endpoint and `image_urls` whenever multiple images are
+endpoint and the seed output is `-1`. Seedream 5.0 Lite Edit also accepts the
+existing size presets. Its API does not accept requested seed or output format
+values, so those widgets are not sent; the generated seed returned by fal is
+still available from the node's seed output. At least one image must be
+connected for these edit endpoints. The node sends `image_url` for the default
+FLUX.1 image-to-image endpoint and `image_urls` whenever multiple images are
 connected. Model schemas differ, so other custom endpoints selected from the
 [fal model gallery](https://fal.ai/models) must support those standard field
 names. The node returns the first output image.

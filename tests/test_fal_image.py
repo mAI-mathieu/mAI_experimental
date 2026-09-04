@@ -11,6 +11,8 @@ from ..utils.fal_image import (
     SUPPORTED_ENDPOINTS,
     add_image_urls,
     build_arguments,
+    build_nano_banana_2_edit_arguments,
+    build_seedream_5_lite_edit_arguments,
     build_seedream_5_pro_edit_arguments,
     download_image_bytes,
     extract_image_url,
@@ -18,7 +20,6 @@ from ..utils.fal_image import (
     image_batch_to_png_bytes,
     normalize_endpoint,
     resolve_image_input_name,
-    build_nano_banana_2_edit_arguments,
 )
 
 
@@ -38,6 +39,7 @@ def test_node_exposes_supported_endpoint_dropdown():
     assert model_endpoint_type[0] == list(SUPPORTED_ENDPOINTS)
     assert model_endpoint_type[1]["default"] == DEFAULT_ENDPOINT
     assert "fal-ai/nano-banana-2/edit" in model_endpoint_type[0]
+    assert "bytedance/seedream/v5/lite/edit" in model_endpoint_type[0]
     assert "bytedance/seedream/v5/pro/edit" in model_endpoint_type[0]
 
 
@@ -114,6 +116,20 @@ def test_build_seedream_5_pro_edit_arguments_uses_endpoint_schema():
     }
 
 
+def test_build_seedream_5_lite_edit_arguments_uses_endpoint_schema():
+    arguments = build_seedream_5_lite_edit_arguments(
+        "edit the image",
+        "landscape_16_9",
+    )
+
+    assert arguments == {
+        "prompt": "edit the image",
+        "image_size": "landscape_16_9",
+        "num_images": 1,
+        "max_images": 1,
+    }
+
+
 def test_extract_image_url_handles_images_and_image_shapes():
     assert extract_image_url({"images": [{"url": "https://example.com/a.png"}]}) == (
         "https://example.com/a.png"
@@ -160,6 +176,7 @@ def test_resolve_image_input_name_uses_list_for_flux_2_edit_family():
     assert resolve_image_input_name("fal-ai/flux-2/lora/edit", 1) == "image_urls"
     assert resolve_image_input_name("fal-ai/flux/dev/image-to-image", 1) == "image_url"
     assert resolve_image_input_name("fal-ai/nano-banana-2/edit", 1) == "image_urls"
+    assert resolve_image_input_name("bytedance/seedream/v5/lite/edit", 1) == "image_urls"
     assert resolve_image_input_name("bytedance/seedream/v5/pro/edit", 1) == "image_urls"
     assert resolve_image_input_name("some-owner/multi-reference", 2) == "image_urls"
 
@@ -321,6 +338,62 @@ def test_node_rejects_seedream_5_pro_edit_without_an_input_image(monkeypatch):
         MAIFalImage().generate(
             "test-key",
             "bytedance/seedream/v5/pro/edit",
+            "edit the image",
+            "square",
+            -1,
+            "png",
+        )
+
+
+def test_node_sends_seedream_5_lite_edit_schema(monkeypatch):
+    np = pytest.importorskip("numpy")
+    input_image = np.zeros((1, 2, 2, 3), dtype=np.float32)
+    output_png = image_batch_to_png_bytes(input_image)[0]
+    output_uri = "data:image/png;base64," + base64.b64encode(output_png).decode("ascii")
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, key):
+            captured["key"] = key
+
+        def upload(self, data, content_type, file_name):
+            return "https://example.com/input.png"
+
+        def subscribe(self, endpoint, arguments):
+            captured["endpoint"] = endpoint
+            captured["arguments"] = arguments
+            return {"images": [{"url": output_uri}], "seed": 42}
+
+    monkeypatch.setitem(sys.modules, "fal_client", SimpleNamespace(SyncClient=FakeClient))
+
+    _, _, result_seed, _ = MAIFalImage().generate(
+        "test-key",
+        "bytedance/seedream/v5/lite/edit",
+        "replace the background",
+        "landscape_16_9",
+        123,
+        "jpeg",
+        image_1=input_image,
+    )
+
+    assert captured["endpoint"] == "bytedance/seedream/v5/lite/edit"
+    assert captured["arguments"] == {
+        "prompt": "replace the background",
+        "image_size": "landscape_16_9",
+        "num_images": 1,
+        "max_images": 1,
+        "image_urls": ["https://example.com/input.png"],
+    }
+    assert result_seed == 42
+
+
+def test_node_rejects_seedream_5_lite_edit_without_an_input_image(monkeypatch):
+    monkeypatch.setitem(sys.modules, "fal_client", SimpleNamespace())
+
+    with pytest.raises(ValueError, match="requires at least one connected input image"):
+        MAIFalImage().generate(
+            "test-key",
+            "bytedance/seedream/v5/lite/edit",
             "edit the image",
             "square",
             -1,
