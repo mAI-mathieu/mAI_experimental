@@ -7,7 +7,9 @@ import pytest
 
 from ..nodes.fal_image import MAIFalImage
 from ..utils.fal_image import (
+    CUSTOM_IMAGE_SIZE_ENDPOINTS,
     DEFAULT_ENDPOINT,
+    RESOLUTION_MODES,
     SUPPORTED_ENDPOINTS,
     add_image_urls,
     build_arguments,
@@ -19,6 +21,7 @@ from ..utils.fal_image import (
     get_result_seed,
     image_batch_to_png_bytes,
     normalize_endpoint,
+    resolve_image_size_argument,
     resolve_image_input_name,
 )
 
@@ -41,6 +44,16 @@ def test_node_exposes_supported_endpoint_dropdown():
     assert "fal-ai/nano-banana-2/edit" in model_endpoint_type[0]
     assert "bytedance/seedream/v5/lite/edit" in model_endpoint_type[0]
     assert "bytedance/seedream/v5/pro/edit" in model_endpoint_type[0]
+
+
+def test_node_exposes_custom_resolution_inputs():
+    required_inputs = MAIFalImage.INPUT_TYPES()["required"]
+
+    assert required_inputs["resolution_mode"][0] == list(RESOLUTION_MODES)
+    assert required_inputs["resolution_mode"][1]["default"] == "preset"
+    assert required_inputs["custom_width"][1]["default"] == 1024
+    assert required_inputs["custom_height"][1]["default"] == 1024
+    assert "Nano Banana 2" in required_inputs["resolution_mode"][1]["tooltip"]
 
 
 def test_node_rejects_empty_api_key_before_loading_client():
@@ -81,6 +94,80 @@ def test_build_arguments_omits_random_seed_and_applies_overrides():
 def test_build_arguments_rejects_non_object_json():
     with pytest.raises(ValueError, match="JSON object"):
         build_arguments("a fox", "square", 1, "png", "[]")
+
+
+def test_build_arguments_accepts_custom_image_size():
+    arguments = build_arguments(
+        "a fox",
+        {"width": 1536, "height": 1024},
+        7,
+        "png",
+        "{}",
+    )
+
+    assert arguments["image_size"] == {"width": 1536, "height": 1024}
+    assert arguments["seed"] == 7
+
+
+def test_resolve_image_size_argument_uses_preset_by_default():
+    assert resolve_image_size_argument(
+        "fal-ai/nano-banana-2/edit",
+        "portrait_4_3",
+        "preset",
+        1024,
+        1024,
+    ) == "portrait_4_3"
+
+
+def test_resolve_image_size_argument_builds_custom_size_for_supported_endpoint():
+    assert "openai/gpt-image-2/edit" in CUSTOM_IMAGE_SIZE_ENDPOINTS
+    assert resolve_image_size_argument(
+        "openai/gpt-image-2/edit",
+        "square",
+        "custom",
+        1536,
+        1024,
+    ) == {"width": 1536, "height": 1024}
+
+
+@pytest.mark.parametrize(
+    "endpoint, expected_detail",
+    [
+        ("fal-ai/flux/dev/image-to-image", "does not expose an image_size"),
+        ("fal-ai/nano-banana-2/edit", "aspect_ratio and resolution tiers"),
+    ],
+)
+def test_resolve_image_size_argument_explains_unsupported_models(
+    endpoint, expected_detail
+):
+    with pytest.raises(ValueError, match=expected_detail):
+        resolve_image_size_argument(
+            endpoint,
+            "square",
+            "custom",
+            1024,
+            1024,
+        )
+
+
+def test_resolve_image_size_argument_validates_model_limits():
+    with pytest.raises(ValueError, match="between 512 and 2048"):
+        resolve_image_size_argument(
+            "fal-ai/flux-2/edit",
+            "square",
+            "custom",
+            4096,
+            4096,
+        )
+
+    with pytest.raises(ValueError, match="fal would otherwise rescale"):
+        resolve_image_size_argument(
+            "bytedance/seedream/v5/lite/edit",
+            "square",
+            "custom",
+            1024,
+            1024,
+        )
 
 
 def test_build_nano_banana_2_edit_arguments_uses_endpoint_schema():
@@ -374,12 +461,15 @@ def test_node_sends_seedream_5_lite_edit_schema(monkeypatch):
         123,
         "jpeg",
         image_1=input_image,
+        resolution_mode="custom",
+        custom_width=2560,
+        custom_height=1440,
     )
 
     assert captured["endpoint"] == "bytedance/seedream/v5/lite/edit"
     assert captured["arguments"] == {
         "prompt": "replace the background",
-        "image_size": "landscape_16_9",
+        "image_size": {"width": 2560, "height": 1440},
         "num_images": 1,
         "max_images": 1,
         "image_urls": ["https://example.com/input.png"],

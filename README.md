@@ -27,9 +27,12 @@ a workflow containing your key. Clear the field before exporting a workflow.
 - `model_endpoint`: dropdown of endpoint IDs supported by this node. The default
   is `fal-ai/flux/dev/image-to-image`.
 - `prompt`: text prompt sent to the endpoint.
-- `image_size`: one of fal's standard image size presets.
+- `image_size`: fal size preset used when `resolution_mode` is `preset`.
 - `seed`: `-1` asks fal for a random seed; zero or higher sends that exact seed.
 - `output_format`: `png` or `jpeg`.
+- `resolution_mode`: `preset` or `custom`. Custom mode sends an exact
+  `{width, height}` request only to compatible endpoints.
+- `custom_width`, `custom_height`: requested output dimensions in custom mode.
 - `image_1`, `image_2`, `image_3` (optional): ComfyUI images uploaded as PNG to
   fal before generation. Each socket also accepts an image batch.
 
@@ -45,6 +48,20 @@ Supported endpoint choices:
 - `fal-ai/nano-banana-2/edit`
 - `bytedance/seedream/v5/lite/edit`
 - `bytedance/seedream/v5/pro/edit`
+
+Custom width and height are supported for all dropdown endpoints except:
+
+- `fal-ai/flux/dev/image-to-image`, whose schema has no output size input.
+- `fal-ai/nano-banana-2/edit`, which uses aspect-ratio and resolution tiers
+  instead of exact dimensions.
+
+Selecting custom mode with either unsupported endpoint raises a clear error
+before any billable request is submitted. Known custom-size limits are checked
+locally: FLUX.2 Edit and FLUX.2 LoRA Edit require each dimension from 512 to
+2048; Seedream 5.0 Lite requires total pixels from 2560x1440 to 4096x4096 to
+avoid automatic scaling; Seedream 5.0 Pro requires total pixels from 1024x1024
+to 2048x2048 and an aspect ratio from 1:16 to 16:1. Other compatible endpoints
+may apply additional fal-side validation.
 
 ### Outputs
 

@@ -5,6 +5,7 @@ from ..utils.fal_image import (
     IMAGE_SIZE_PRESETS,
     NANO_BANANA_2_EDIT_ENDPOINT,
     REQUIRED_IMAGE_ENDPOINTS,
+    RESOLUTION_MODES,
     SEEDREAM_5_LITE_EDIT_ENDPOINT,
     SEEDREAM_5_PRO_EDIT_ENDPOINT,
     SUPPORTED_ENDPOINTS,
@@ -19,6 +20,7 @@ from ..utils.fal_image import (
     image_batch_to_png_bytes,
     image_bytes_to_tensor,
     normalize_endpoint,
+    resolve_image_size_argument,
     resolve_image_input_name,
 )
 
@@ -53,6 +55,36 @@ class MAIFalImage:
                     {"default": -1, "min": -1, "max": 0x7FFFFFFFFFFFFFFF},
                 ),
                 "output_format": (["png", "jpeg"], {"default": "png"}),
+                "resolution_mode": (
+                    list(RESOLUTION_MODES),
+                    {
+                        "default": "preset",
+                        "tooltip": (
+                            "Custom width and height are not supported by FLUX.1 dev "
+                            "image-to-image or Nano Banana 2 Edit."
+                        ),
+                    },
+                ),
+                "custom_width": (
+                    "INT",
+                    {
+                        "default": 1024,
+                        "min": 64,
+                        "max": 4096,
+                        "step": 8,
+                        "tooltip": "Used only when resolution_mode is custom.",
+                    },
+                ),
+                "custom_height": (
+                    "INT",
+                    {
+                        "default": 1024,
+                        "min": 64,
+                        "max": 4096,
+                        "step": 8,
+                        "tooltip": "Used only when resolution_mode is custom.",
+                    },
+                ),
             },
             "optional": {
                 "image_1": ("IMAGE",),
@@ -77,6 +109,9 @@ class MAIFalImage:
         image_1=None,
         image_2=None,
         image_3=None,
+        resolution_mode="preset",
+        custom_width=1024,
+        custom_height=1024,
     ):
         key = api_key.strip() if isinstance(api_key, str) else ""
         if not key:
@@ -99,28 +134,36 @@ class MAIFalImage:
                 f"'{endpoint}' requires at least one connected input image."
             )
 
+        resolved_image_size = resolve_image_size_argument(
+            endpoint,
+            image_size,
+            resolution_mode,
+            custom_width,
+            custom_height,
+        )
+
         if endpoint == NANO_BANANA_2_EDIT_ENDPOINT:
             arguments = build_nano_banana_2_edit_arguments(
                 prompt,
-                image_size,
+                resolved_image_size,
                 seed,
                 output_format,
             )
         elif endpoint == SEEDREAM_5_LITE_EDIT_ENDPOINT:
             arguments = build_seedream_5_lite_edit_arguments(
                 prompt,
-                image_size,
+                resolved_image_size,
             )
         elif endpoint == SEEDREAM_5_PRO_EDIT_ENDPOINT:
             arguments = build_seedream_5_pro_edit_arguments(
                 prompt,
-                image_size,
+                resolved_image_size,
                 output_format,
             )
         else:
             arguments = build_arguments(
                 prompt,
-                image_size,
+                resolved_image_size,
                 seed,
                 output_format,
                 "{}",

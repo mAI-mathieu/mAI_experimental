@@ -23,6 +23,19 @@ SUPPORTED_ENDPOINTS = (
     SEEDREAM_5_LITE_EDIT_ENDPOINT,
     SEEDREAM_5_PRO_EDIT_ENDPOINT,
 )
+CUSTOM_IMAGE_SIZE_ENDPOINTS = frozenset(
+    {
+        "fal-ai/flux-2/edit",
+        "fal-ai/flux-2-max/edit",
+        "fal-ai/flux-2/lora/edit",
+        "fal-ai/flux-2/klein/9b/edit",
+        "fal-ai/flux-2/klein/9b/edit/lora",
+        "openai/gpt-image-2/edit",
+        SEEDREAM_5_LITE_EDIT_ENDPOINT,
+        SEEDREAM_5_PRO_EDIT_ENDPOINT,
+    }
+)
+RESOLUTION_MODES = ("preset", "custom")
 IMAGE_SIZE_PRESETS = (
     "landscape_4_3",
     "landscape_16_9",
@@ -50,6 +63,82 @@ IMAGE_URL_LIST_ENDPOINTS = frozenset(
 REQUIRED_IMAGE_ENDPOINTS = frozenset(SUPPORTED_ENDPOINTS)
 
 
+def _validate_image_size_argument(image_size: Any) -> None:
+    if isinstance(image_size, str):
+        if image_size not in IMAGE_SIZE_PRESETS:
+            raise ValueError(f"Unknown image_size preset: {image_size}")
+        return
+
+    if not isinstance(image_size, dict):
+        raise TypeError("image_size must be a preset name or a width/height object")
+    if set(image_size) != {"width", "height"}:
+        raise ValueError("Custom image_size must contain only width and height")
+
+    for name in ("width", "height"):
+        value = image_size[name]
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise ValueError(f"Custom image_size {name} must be a positive integer")
+
+
+def resolve_image_size_argument(
+    endpoint: str,
+    image_size: str,
+    resolution_mode: str,
+    custom_width: int,
+    custom_height: int,
+) -> Any:
+    """Return a preset or custom fal image_size value for an endpoint."""
+    if resolution_mode not in RESOLUTION_MODES:
+        raise ValueError(f"Unknown resolution_mode: {resolution_mode}")
+    if resolution_mode == "preset":
+        _validate_image_size_argument(image_size)
+        return image_size
+
+    if endpoint not in CUSTOM_IMAGE_SIZE_ENDPOINTS:
+        if endpoint == NANO_BANANA_2_EDIT_ENDPOINT:
+            detail = "it only accepts aspect_ratio and resolution tiers"
+        elif endpoint == DEFAULT_ENDPOINT:
+            detail = "its fal schema does not expose an image_size input"
+        else:
+            detail = "this endpoint is not configured for custom dimensions"
+        raise ValueError(
+            f"'{endpoint}' does not support exact width and height because {detail}. "
+            "Select preset resolution mode."
+        )
+
+    custom_size = {"width": custom_width, "height": custom_height}
+    _validate_image_size_argument(custom_size)
+
+    if endpoint in {"fal-ai/flux-2/edit", "fal-ai/flux-2/lora/edit"}:
+        if not (512 <= custom_width <= 2048 and 512 <= custom_height <= 2048):
+            raise ValueError(
+                f"'{endpoint}' custom width and height must each be between 512 and 2048."
+            )
+
+    if endpoint == SEEDREAM_5_LITE_EDIT_ENDPOINT:
+        pixel_count = custom_width * custom_height
+        if not (2560 * 1440 <= pixel_count <= 4096 * 4096):
+            raise ValueError(
+                f"'{endpoint}' exact custom size must contain between 2560x1440 and "
+                "4096x4096 total pixels; fal would otherwise rescale it."
+            )
+
+    if endpoint == SEEDREAM_5_PRO_EDIT_ENDPOINT:
+        pixel_count = custom_width * custom_height
+        aspect_ratio = custom_width / custom_height
+        if not (1024 * 1024 <= pixel_count <= 2048 * 2048):
+            raise ValueError(
+                f"'{endpoint}' custom size must contain between 1024x1024 and "
+                "2048x2048 total pixels."
+            )
+        if not (1 / 16 <= aspect_ratio <= 16):
+            raise ValueError(
+                f"'{endpoint}' custom size aspect ratio must be between 1:16 and 16:1."
+            )
+
+    return custom_size
+
+
 def normalize_endpoint(endpoint: str) -> str:
     """Return a fal endpoint ID and reject URLs or malformed IDs."""
     if not isinstance(endpoint, str):
@@ -73,7 +162,7 @@ def normalize_endpoint(endpoint: str) -> str:
 
 def build_arguments(
     prompt: str,
-    image_size: str,
+    image_size: Any,
     seed: int,
     output_format: str,
     extra_arguments_json: str,
@@ -81,8 +170,7 @@ def build_arguments(
     """Build the request body, allowing endpoint-specific JSON overrides."""
     if not isinstance(prompt, str) or not prompt.strip():
         raise ValueError("prompt cannot be empty")
-    if image_size not in IMAGE_SIZE_PRESETS:
-        raise ValueError(f"Unknown image_size preset: {image_size}")
+    _validate_image_size_argument(image_size)
     if output_format not in ("png", "jpeg"):
         raise ValueError(f"Unknown output_format: {output_format}")
 
@@ -134,7 +222,7 @@ def build_nano_banana_2_edit_arguments(
 
 def build_seedream_5_pro_edit_arguments(
     prompt: str,
-    image_size: str,
+    image_size: Any,
     output_format: str,
 ) -> dict[str, Any]:
     """Build the request body for fal's Seedream 5.0 Pro edit endpoint."""
@@ -149,13 +237,12 @@ def build_seedream_5_pro_edit_arguments(
 
 def build_seedream_5_lite_edit_arguments(
     prompt: str,
-    image_size: str,
+    image_size: Any,
 ) -> dict[str, Any]:
     """Build the request body for fal's Seedream 5.0 Lite edit endpoint."""
     if not isinstance(prompt, str) or not prompt.strip():
         raise ValueError("prompt cannot be empty")
-    if image_size not in IMAGE_SIZE_PRESETS:
-        raise ValueError(f"Unknown image_size preset: {image_size}")
+    _validate_image_size_argument(image_size)
 
     return {
         "prompt": prompt,
