@@ -24,14 +24,26 @@ a workflow containing your key. Clear the field before exporting a workflow.
 ### Inputs
 
 - `api_key`: fal API key used for this request.
-- `model_endpoint`: fal endpoint ID, default
-  `fal-ai/flux/dev/image-to-image`. Use an ID, not a full URL.
+- `model_endpoint`: dropdown of endpoint IDs supported by this node. The default
+  is `fal-ai/flux/dev/image-to-image`.
 - `prompt`: text prompt sent to the endpoint.
 - `image_size`: one of fal's standard image size presets.
 - `seed`: `-1` asks fal for a random seed; zero or higher sends that exact seed.
 - `output_format`: `png` or `jpeg`.
 - `image_1`, `image_2`, `image_3` (optional): ComfyUI images uploaded as PNG to
   fal before generation. Each socket also accepts an image batch.
+
+Supported endpoint choices:
+
+- `fal-ai/flux/dev/image-to-image`
+- `fal-ai/flux-2/edit`
+- `fal-ai/flux-2-max/edit`
+- `fal-ai/flux-2/lora/edit`
+- `fal-ai/flux-2/klein/9b/edit`
+- `fal-ai/flux-2/klein/9b/edit/lora`
+- `openai/gpt-image-2/edit`
+- `fal-ai/nano-banana-2/edit`
+- `bytedance/seedream/v5/pro/edit`
 
 ### Outputs
 

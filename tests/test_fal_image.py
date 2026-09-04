@@ -7,6 +7,8 @@ import pytest
 
 from ..nodes.fal_image import MAIFalImage
 from ..utils.fal_image import (
+    DEFAULT_ENDPOINT,
+    SUPPORTED_ENDPOINTS,
     add_image_urls,
     build_arguments,
     build_seedream_5_pro_edit_arguments,
@@ -28,6 +30,15 @@ def test_node_exposes_api_key_input():
     assert api_key_type[1]["default"] == ""
     assert "extra_arguments_json" not in required_inputs
     assert "image_input_name" not in required_inputs
+
+
+def test_node_exposes_supported_endpoint_dropdown():
+    model_endpoint_type = MAIFalImage.INPUT_TYPES()["required"]["model_endpoint"]
+
+    assert model_endpoint_type[0] == list(SUPPORTED_ENDPOINTS)
+    assert model_endpoint_type[1]["default"] == DEFAULT_ENDPOINT
+    assert "fal-ai/nano-banana-2/edit" in model_endpoint_type[0]
+    assert "bytedance/seedream/v5/pro/edit" in model_endpoint_type[0]
 
 
 def test_node_rejects_empty_api_key_before_loading_client():

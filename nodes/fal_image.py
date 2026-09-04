@@ -6,6 +6,7 @@ from ..utils.fal_image import (
     NANO_BANANA_2_EDIT_ENDPOINT,
     REQUIRED_IMAGE_ENDPOINTS,
     SEEDREAM_5_PRO_EDIT_ENDPOINT,
+    SUPPORTED_ENDPOINTS,
     add_image_urls,
     build_arguments,
     build_nano_banana_2_edit_arguments,
@@ -37,8 +38,8 @@ class MAIFalImage:
                     {"default": "", "multiline": False},
                 ),
                 "model_endpoint": (
-                    "STRING",
-                    {"default": DEFAULT_ENDPOINT, "multiline": False},
+                    list(SUPPORTED_ENDPOINTS),
+                    {"default": DEFAULT_ENDPOINT},
                 ),
                 "prompt": (
                     "STRING",

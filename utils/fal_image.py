@@ -10,6 +10,17 @@ from urllib.request import Request, urlopen
 DEFAULT_ENDPOINT = "fal-ai/flux/dev/image-to-image"
 NANO_BANANA_2_EDIT_ENDPOINT = "fal-ai/nano-banana-2/edit"
 SEEDREAM_5_PRO_EDIT_ENDPOINT = "bytedance/seedream/v5/pro/edit"
+SUPPORTED_ENDPOINTS = (
+    DEFAULT_ENDPOINT,
+    "fal-ai/flux-2/edit",
+    "fal-ai/flux-2-max/edit",
+    "fal-ai/flux-2/lora/edit",
+    "fal-ai/flux-2/klein/9b/edit",
+    "fal-ai/flux-2/klein/9b/edit/lora",
+    "openai/gpt-image-2/edit",
+    NANO_BANANA_2_EDIT_ENDPOINT,
+    SEEDREAM_5_PRO_EDIT_ENDPOINT,
+)
 IMAGE_SIZE_PRESETS = (
     "landscape_4_3",
     "landscape_16_9",
@@ -33,12 +44,7 @@ IMAGE_URL_LIST_ENDPOINTS = frozenset(
         "openai/gpt-image-2/edit",
     }
 )
-REQUIRED_IMAGE_ENDPOINTS = frozenset(
-    {
-        NANO_BANANA_2_EDIT_ENDPOINT,
-        SEEDREAM_5_PRO_EDIT_ENDPOINT,
-    }
-)
+REQUIRED_IMAGE_ENDPOINTS = frozenset(SUPPORTED_ENDPOINTS)
 
 
 def normalize_endpoint(endpoint: str) -> str:
