@@ -171,6 +171,48 @@ def test_model_discovery_extra_paths_and_containment(monkeypatch, model_package,
             paths.resolve_model(name)
 
 
+def test_missing_model_reports_searched_paths(monkeypatch, tmp_path):
+    roots = [tmp_path / "sol_refiner", tmp_path / "diffusers"]
+    monkeypatch.setattr(paths, "model_roots", lambda: roots)
+    with pytest.raises(FileNotFoundError) as error:
+        paths.resolve_model(DEFAULT_MODEL)
+    for root in roots:
+        assert str(root / DEFAULT_MODEL.split("/")[-1] / "model_index.json") in str(error.value)
+    assert "generation weights are a separate model" in str(error.value)
+
+
+def test_selected_incomplete_model_reports_missing_file(monkeypatch, model_package):
+    monkeypatch.setattr(paths, "model_roots", lambda: [model_package.parent])
+    (model_package / "transformer" / "config.json").unlink()
+    with pytest.raises(ValueError, match="transformer.*config.json"):
+        paths.resolve_model(DEFAULT_MODEL)
+
+
+def test_selected_wrong_pipeline_reports_real_error(monkeypatch, model_package):
+    monkeypatch.setattr(paths, "model_roots", lambda: [model_package.parent])
+    (model_package / "model_index.json").write_text(json.dumps({"_class_name": "OtherPipeline"}))
+    with pytest.raises(ValueError, match="SoLRefinerH3Pipeline"):
+        paths.resolve_model(DEFAULT_MODEL)
+
+
+def test_queue_validation_rejects_missing_model_without_runtime_import(monkeypatch, tmp_path):
+    monkeypatch.setattr(paths, "model_roots", lambda: [tmp_path])
+    loader = NODE_CLASS_MAPPINGS["MAISoLH3Loader"]
+    runtime_name = loader.__module__.rsplit(".", 2)[0] + ".sol_refiner.runtime"
+    assert runtime_name not in sys.modules
+    result = loader.VALIDATE_INPUTS(DEFAULT_MODEL)
+    assert isinstance(result, str) and "was not found" in result
+    assert runtime_name not in sys.modules
+
+
+def test_queue_validation_accepts_complete_local_model(monkeypatch, model_package):
+    monkeypatch.setattr(paths, "model_roots", lambda: [model_package.parent])
+    loader = NODE_CLASS_MAPPINGS["MAISoLH3Loader"]
+    assert loader.VALIDATE_INPUTS(DEFAULT_MODEL) is True
+    assert loader.VALIDATE_INPUTS(model_package.name) is True
+    assert isinstance(loader.VALIDATE_INPUTS("../model"), str)
+
+
 def test_node_registration_and_defaults():
     assert set(NODE_CLASS_MAPPINGS) == {"MAIExampleTextNode", "MAIFalImage", "MAIFalIdeogramEdit", "MAIFalImageEdit", "MAISoLH3Loader", "MAISoLH3Refiner"}
     loader = NODE_CLASS_MAPPINGS["MAISoLH3Loader"]

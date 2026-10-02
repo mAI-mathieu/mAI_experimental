@@ -28,6 +28,25 @@ ComfyUI/models/sol_refiner/SoL-Refiner-LTX-2.5-for-MiniMax-H3/
   transformer/      vae/
 ```
 
+The refiner package is separate from MiniMax H3 generation checkpoints. If it
+has not been downloaded, run this from your ComfyUI directory in a terminal
+with the Hugging Face `hf` CLI available:
+
+```bash
+hf download Efficient-Large-Model/SoL-Refiner-LTX-2.5-for-MiniMax-H3 \
+  --local-dir models/sol_refiner/SoL-Refiner-LTX-2.5-for-MiniMax-H3
+```
+
+This explicitly downloads the entire package; see the
+[Hugging Face CLI documentation](https://huggingface.co/docs/huggingface_hub/guides/cli#download-to-a-local-folder).
+Wait for the download to finish, then refresh/restart ComfyUI and select the
+model in **mAI SoL H3 Loader**. `model_index.json` must be immediately inside
+the model folder, alongside all component directories. The loader checks the
+package during queue validation, before upstream video generation starts.
+Missing-package errors list the exact paths searched; incomplete packages
+report the missing configuration or shard. This check reads local metadata
+only and does not import SoL inference dependencies or load GPU weights.
+
 The loader also searches existing `sol_refiner` and `diffusers` entries in
 `extra_model_paths.yaml`. Entries point to the parent of the package folder.
 The default model ID resolves to the original local folder name; alternate

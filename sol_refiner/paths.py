@@ -43,7 +43,17 @@ def resolve_model(name):
         name = DEFAULT_FOLDER
     if not isinstance(name, str) or not name or name in (".", "..") or "/" in name or "\\" in name or ":" in name:
         raise ValueError("Select a local SoL model folder from the loader list.")
-    models = discovered_models()
-    if name not in models:
-        raise FileNotFoundError(f"SoL H3 model '{name}' was not found. Download the complete package into models/sol_refiner/{DEFAULT_FOLDER}/ or a configured sol_refiner/diffusers model root. The node never downloads weights.")
-    return validate_package(models[name])
+    roots = model_roots()
+    for root in roots:
+        directory = (root / name).resolve()
+        if directory.is_relative_to(root) and directory.is_dir():
+            # Validate the selected folder directly so incomplete downloads and
+            # invalid metadata report their real error instead of "not found".
+            return validate_package(directory)
+    searched = "\n".join(f"  {root / name / 'model_index.json'}" for root in roots)
+    raise FileNotFoundError(
+        f"SoL H3 refiner package '{name}' was not found. Searched:\n{searched}\n"
+        f"Download the complete {DEFAULT_MODEL} package into models/sol_refiner/{DEFAULT_FOLDER}/ "
+        "or a configured sol_refiner/diffusers model root. MiniMax H3 generation weights are a separate model. "
+        "The node never downloads weights."
+    )

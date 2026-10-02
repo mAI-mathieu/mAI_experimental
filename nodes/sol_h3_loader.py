@@ -17,6 +17,14 @@ class MAISoLH3Loader:
             "gpu_resident": ("BOOLEAN", {"default": True}),
         }}
 
+    @classmethod
+    def VALIDATE_INPUTS(cls, model_name):
+        try:
+            resolve_model(model_name)
+        except (OSError, ValueError) as exc:
+            return str(exc)
+        return True
+
     def load(self, model_name, precision, decoder_backend, keep_model_loaded=True, gpu_resident=True):
         directory = resolve_model(model_name)
         from ..sol_refiner.runtime import get_refiner
