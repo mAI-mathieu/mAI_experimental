@@ -1,5 +1,12 @@
 import json
 
+from ..utils.fal_upscale import (
+    DEFAULT_TOPAZ_MODEL,
+    TOPAZ_MODELS,
+    UPSCALE_ENDPOINTS,
+    build_upscale_arguments,
+    validate_upscale_images,
+)
 from ..utils.fal_image import (
     DEFAULT_ENDPOINT,
     IMAGE_SIZE_PRESETS,
@@ -26,7 +33,7 @@ from ..utils.fal_image import (
 
 
 class MAIFalImage:
-    """Generate an image through a fal text-to-image endpoint."""
+    """Generate, edit, or upscale an image through a supported fal endpoint."""
 
     CATEGORY = "mAI / Image"
     FUNCTION = "generate"
@@ -61,7 +68,8 @@ class MAIFalImage:
                         "default": "preset",
                         "tooltip": (
                             "Custom width and height are not supported by FLUX.1 dev "
-                            "image-to-image or Nano Banana 2 Edit."
+                            "image-to-image or Nano Banana 2 Edit. Upscalers ignore "
+                            "resolution settings and use upscale_factor instead."
                         ),
                     },
                 ),
@@ -90,6 +98,24 @@ class MAIFalImage:
                 "image_1": ("IMAGE",),
                 "image_2": ("IMAGE",),
                 "image_3": ("IMAGE",),
+                "upscale_factor": (
+                    "FLOAT",
+                    {
+                        "default": 4.0, "min": 1.0, "max": 10.0, "step": 0.5,
+                        "tooltip": (
+                            "Upscalers only: multiply both image dimensions. "
+                            "Topaz/Clarity: up to 4x; AuraSR: exactly 4x; "
+                            "SeedVR2/Crystal: up to 10x in this node."
+                        ),
+                    },
+                ),
+                "topaz_model": (
+                    list(TOPAZ_MODELS),
+                    {
+                        "default": DEFAULT_TOPAZ_MODEL,
+                        "tooltip": "Topaz only. High Fidelity V2 preserves detail; CGI is for rendered art.",
+                    },
+                ),
             },
         }
 
@@ -112,6 +138,8 @@ class MAIFalImage:
         resolution_mode="preset",
         custom_width=1024,
         custom_height=1024,
+        upscale_factor=4.0,
+        topaz_model=DEFAULT_TOPAZ_MODEL,
     ):
         key = api_key.strip() if isinstance(api_key, str) else ""
         if not key:
@@ -134,40 +162,46 @@ class MAIFalImage:
                 f"'{endpoint}' requires at least one connected input image."
             )
 
-        resolved_image_size = resolve_image_size_argument(
-            endpoint,
-            image_size,
-            resolution_mode,
-            custom_width,
-            custom_height,
-        )
-
-        if endpoint == NANO_BANANA_2_EDIT_ENDPOINT:
-            arguments = build_nano_banana_2_edit_arguments(
-                prompt,
-                resolved_image_size,
-                seed,
-                output_format,
-            )
-        elif endpoint == SEEDREAM_5_LITE_EDIT_ENDPOINT:
-            arguments = build_seedream_5_lite_edit_arguments(
-                prompt,
-                resolved_image_size,
-            )
-        elif endpoint == SEEDREAM_5_PRO_EDIT_ENDPOINT:
-            arguments = build_seedream_5_pro_edit_arguments(
-                prompt,
-                resolved_image_size,
-                output_format,
+        if endpoint in UPSCALE_ENDPOINTS:
+            validate_upscale_images(image_batches)
+            arguments = build_upscale_arguments(
+                endpoint, upscale_factor, prompt, seed, output_format, topaz_model,
             )
         else:
-            arguments = build_arguments(
-                prompt,
-                resolved_image_size,
-                seed,
-                output_format,
-                "{}",
+            resolved_image_size = resolve_image_size_argument(
+                endpoint,
+                image_size,
+                resolution_mode,
+                custom_width,
+                custom_height,
             )
+
+            if endpoint == NANO_BANANA_2_EDIT_ENDPOINT:
+                arguments = build_nano_banana_2_edit_arguments(
+                    prompt,
+                    resolved_image_size,
+                    seed,
+                    output_format,
+                )
+            elif endpoint == SEEDREAM_5_LITE_EDIT_ENDPOINT:
+                arguments = build_seedream_5_lite_edit_arguments(
+                    prompt,
+                    resolved_image_size,
+                )
+            elif endpoint == SEEDREAM_5_PRO_EDIT_ENDPOINT:
+                arguments = build_seedream_5_pro_edit_arguments(
+                    prompt,
+                    resolved_image_size,
+                    output_format,
+                )
+            else:
+                arguments = build_arguments(
+                    prompt,
+                    resolved_image_size,
+                    seed,
+                    output_format,
+                    "{}",
+                )
 
         uploaded_urls = []
         try:

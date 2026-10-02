@@ -6,6 +6,7 @@ from typing import Any
 from urllib.parse import unquote_to_bytes, urlparse
 from urllib.request import Request, urlopen
 
+from .fal_upscale import UPSCALE_ENDPOINTS
 
 DEFAULT_ENDPOINT = "fal-ai/flux/dev/image-to-image"
 NANO_BANANA_2_EDIT_ENDPOINT = "fal-ai/nano-banana-2/edit"
@@ -22,6 +23,7 @@ SUPPORTED_ENDPOINTS = (
     NANO_BANANA_2_EDIT_ENDPOINT,
     SEEDREAM_5_LITE_EDIT_ENDPOINT,
     SEEDREAM_5_PRO_EDIT_ENDPOINT,
+    *UPSCALE_ENDPOINTS,
 )
 CUSTOM_IMAGE_SIZE_ENDPOINTS = frozenset(
     {
@@ -279,6 +281,10 @@ def resolve_image_input_name(endpoint: str, image_count: int) -> str:
     """Choose the documented image field shape for supported fal endpoints."""
     if image_count < 1:
         raise ValueError("image_count must be at least 1")
+    if endpoint in UPSCALE_ENDPOINTS:
+        if image_count != 1:
+            raise ValueError("Upscalers require exactly one input image.")
+        return "image_url"
     is_flux_2_edit = endpoint.startswith("fal-ai/flux-2") and "/edit" in endpoint
     if (
         image_count > 1
