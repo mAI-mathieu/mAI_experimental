@@ -14,7 +14,7 @@
 # limitations under the License.
 #
 # ComfyUI adaptation copyright 2026 Olli Sorjonen.
-# Adapted for mAI: independent integration and attention registration namespace.
+# Adapted for mAI: independent integration, attention namespace, and native text dispatch.
 # Source: https://github.com/o-l-l-i/ComfyUI-Olm-SoL-Refiner/blob/main/models.py
 # Adapted from Diffusers' transformer_ltx2.py; modified for ComfyUI.
 # See THIRD_PARTY_NOTICES.md for the source revision and changes.
@@ -26,7 +26,7 @@ from transformers import AttentionInterface
 from transformers.masking_utils import AttentionMaskInterface, ALL_MASK_ATTENTION_FUNCTIONS
 
 from comfy import model_management, ops
-from comfy.ldm.modules.attention import optimized_attention
+from comfy.ldm.modules.attention import optimized_attention, optimized_attention_for_device
 from diffusers import LTX2VideoTransformer3DModel
 from diffusers.models.transformers.transformer_ltx2 import (
     LTX2Attention,
@@ -37,9 +37,13 @@ from diffusers.models.transformers.transformer_ltx2 import (
 
 def comfy_text_attention(module, query, key, value, attention_mask, scaling=None, **kwargs):
     model_management.throw_exception_if_processing_interrupted()
-    out = optimized_attention(query, key, value, query.shape[1], mask=attention_mask,
-                              skip_reshape=True, skip_output_reshape=True,
-                              scale=scaling, enable_gqa=query.shape[1] != key.shape[1])
+    # Match ComfyUI's native Gemma text path. Global INT8 attention cannot
+    # consume Gemma4Unified's 512-wide heads; text dispatch preserves their size.
+    attention = optimized_attention_for_device(query.device, mask=attention_mask is not None, small_input=True)
+    scale = scaling if scaling is not None else query.shape[-1] ** -0.5
+    out = attention(query, key, value, query.shape[1], mask=attention_mask,
+                    skip_reshape=True, skip_output_reshape=True,
+                    scale=scale, enable_gqa=query.shape[1] != key.shape[1])
     return out.transpose(1, 2).contiguous(), None
 
 

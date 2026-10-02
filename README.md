@@ -68,6 +68,12 @@ Linux Flex requires PyTorch's compatible Triton compiler. NATTEN is optional,
 and must match Linux PyTorch, CUDA, and GPU architecture; it is never installed
 or compiled by the node. No Windows Triton dependency is added.
 
+Prompt encoding uses ComfyUI's native text-attention selector, which handles
+Gemma4Unified's 512-wide attention heads. This avoids the 256-head-dimension
+limit of `--use-ck-attention` for the text encoder while the video transformer
+continues to use ComfyUI's selected optimized attention. Decoder Flex/NATTEN
+selection is independent of text attention.
+
 Loader inputs:
 
 | Input | Default / behavior |

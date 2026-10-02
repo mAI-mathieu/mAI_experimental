@@ -5,7 +5,8 @@ exceptions in Olli Sorjonen's
 [ComfyUI-Olm-SoL-Refiner](https://github.com/o-l-l-i/ComfyUI-Olm-SoL-Refiner).
 The exceptions explicitly include its ComfyUI integration changes. Original
 authorship and license headers are retained in both files. mAI changes rename
-the attention registration, defer compilation, and integrate independent
+the attention registration, select ComfyUI's native text-attention dispatch,
+defer compilation, and integrate independent
 backend probing. No restricted node, runtime, or loading source is distributed.
 
 The video transformer is copyright 2025 The Lightricks team and The HuggingFace
