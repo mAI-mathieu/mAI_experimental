@@ -2,6 +2,125 @@
 
 Small experimental nodes for ComfyUI.
 
+## mAI SoL H3 Loader and mAI SoL H3 Refiner
+
+Native one-step generative video refinement/upscaling using
+[NVIDIA SoL H3](https://github.com/NVlabs/Sana/tree/sol-engine/models/sol-refiner/MiniMax-H3).
+These nodes appear under `mAI / Image`, registered as `MAISoLH3Loader` and
+`MAISoLH3Refiner`. Connect ordinary decoded video `IMAGE` frames; LTX latents
+and MiniMax generation are unnecessary. Intended especially for MiniMax H3
+outputs, but other generators' frames can be supplied. Generative refinement
+can change source details and identity. Audio bypasses these nodes.
+
+Target: Linux, NVIDIA CUDA, a GPU with BF16 support, substantial VRAM and system
+RAM. No subprocess, temporary video, image sequence, or model download runs
+inside these nodes. Existing nodes still import without SoL dependencies.
+
+Download the complete approximately 71 GB
+[checkpoint package](https://huggingface.co/Efficient-Large-Model/SoL-Refiner-LTX-2.5-for-MiniMax-H3)
+yourself and preserve this structure:
+
+```text
+ComfyUI/models/sol_refiner/SoL-Refiner-LTX-2.5-for-MiniMax-H3/
+  model_index.json
+  connectors/       diffusion_decoder/   latent_upsampler/
+  scheduler/        text_encoder/        tokenizer/
+  transformer/      vae/
+```
+
+The loader also searches existing `sol_refiner` and `diffusers` entries in
+`extra_model_paths.yaml`. Entries point to the parent of the package folder.
+The default model ID resolves to the original local folder name; alternate
+folder names appear in the selector after refresh/restart. The pipeline class,
+component files, shard presence, and unshifted scheduler are validated.
+
+Required Diffusers APIs: `AutoencoderKLLTX2Video`, `LTX2ConditionPipeline`,
+`LTX2TextConnectors`, `LTX2LatentUpsamplerModel`, `LTX2VideoTransformer3DModel`,
+and `LTX2VideoDiffusionDecoderModel` with tiled/untiled decode support. Known
+compatible reference revision:
+`e0abab83b5df05de9e7abd788643c1a7c1e42e28` (0.41.0.dev0 APIs). Keep a compatible
+installed build; there is no verified minimum released Diffusers version.
+Transformers needs the package's `Gemma4UnifiedForConditionalGeneration`
+support (reference >=5.12.1). Optional dependencies are documented in
+`requirements-sol.txt`, separate from the existing pack requirements. Nothing
+was installed or changed automatically. Review the optional requirements in
+your ComfyUI environment before installing; do not replace/downgrade PyTorch.
+Linux Flex requires PyTorch's compatible Triton compiler. NATTEN is optional,
+and must match Linux PyTorch, CUDA, and GPU architecture; it is never installed
+or compiled by the node. No Windows Triton dependency is added.
+
+Loader inputs:
+
+| Input | Default / behavior |
+| --- | --- |
+| `model_name` | `Efficient-Large-Model/SoL-Refiner-LTX-2.5-for-MiniMax-H3`, local only |
+| `precision` | `bf16`; `fp8` explicitly quantizes large transformer block linears through ComfyUI/comfy-kitchen |
+| `decoder_backend` | `auto`: use NATTEN after a small compatibility probe, otherwise Flex; explicit `natten` fails clearly when unavailable |
+| `keep_model_loaded` | `true`: retain reusable component weights between runs; false unloads and releases them after execution |
+| `gpu_resident` | `true`: avoid deliberate stage offloads; ComfyUI may evict weights for other models/memory pressure. False stages components and intermediate tensors through CPU |
+
+Loader output: `refiner` (`MAI_SOL_H3_REFINER`). Identical loader settings share
+a weakly held runtime while workflows reference it. Cache keys include local
+directory, precision, resolved backend, lifetime/residency policy, and device.
+Components load lazily once and remain subject to ComfyUI ModelPatcher memory
+management. Full text/VAE/decoder component loads are required; `--novram` is
+unsupported. FP8 leaves boundary projections, modulation tables, and norms in
+BF16; it requires supported hardware and ComfyUI's quantization API. NVFP4 is
+not implemented. FP8 quality/stability still requires real GPU comparison.
+
+Refiner inputs:
+
+| Input | Default / behavior |
+| --- | --- |
+| `refiner`, `images` | Loader output and RGB float `IMAGE` batch `[B,H,W,3]` in 0..1 |
+| `prompt` | Empty UI default; execution requires the original visible scene/action description; tokenized to at most 1024 tokens |
+| `fps` | 24.0, range 1..240; sets temporal position encoding |
+| `width`, `height` | 1920 x 1080, even dimensions 224..4096 |
+| `sigma` | **0.9093750119**, the official one-step sigma; changes are experimental |
+| `seed`, `decoder_seed` | 0/0; independent refinement and generative decoder noise |
+| `decoder_mode` | `auto`: untiled first, retry once tiled only on `torch.cuda.OutOfMemoryError`; explicit `untiled` never enables decoder tiling |
+| `decoder_tile_size` | 768 pixels; 256/384/512/768/1024 |
+| `decoder_tile_frames` | 128; 16/32/64/128, temporal stride derived as 5/8 of size aligned to 2 frames (default 80) |
+| `decoder_tile_stride` | 512 pixels; must be a multiple of 8 smaller than the spatial tile size; reduce it when selecting smaller tiles |
+
+Output: `images` (`IMAGE`), CPU float32 RGB `[B,height,width,3]` in 0..1,
+with exactly the input frame count. Internal spatial dimensions round up to
+multiples of 64 (1920x1080 -> 1920x1088), with center cropping after decode.
+Source conditioning uses half that canvas, deterministic VAE posterior mode,
+latent upsampling, and LTX normalization. There is exactly **one** video
+transformer prediction, no CFG and no negative prompt. The unshifted
+FlowMatch Euler step from sigma to zero equals `noisy - sigma * velocity`.
+The diffusion decoder is independently seeded and also uses its released
+one-step x0 configuration. Tiled output can differ from untiled output.
+
+Frame padding repeats the last frame to the next `8k+1` length and trims after
+decode. Minimum is derived from the decoder configuration: the released final
+11-frame attention kernel needs 17 frames on that grid. Thus 1, 8, and 9 frames
+process internally as 17; 121 stays 121; 124 becomes 129; 158 becomes 161. A
+9-frame clip is already temporally aligned but still below the decoder minimum.
+Padding is logged. NVIDIA's reference truncates to a compatible length;
+this integration preserves every supplied frame. Same settings/seeds reproduce
+noise, subject to CUDA/backend numerical nondeterminism.
+
+Testing: run `python -m pytest` for offline geometry, padding, tensor, seed,
+backend, model validation, mocked pipeline, and recovery checks. No checkpoint
+is downloaded by tests. For manual CUDA validation, restart ComfyUI, refresh
+the browser, add the loader/refiner and connect decoded H3 frames -> refiner ->
+Preview Image or your existing video output nodes. Start with a short clip,
+its original prompt, 24 fps, BF16, Flex, untiled, 1920x1080, official sigma,
+and seeds 0/0. Check frame count, resolution, range and repeatability. Compare
+sigma 0.89 and 0.92 and tiled/untiled modes with everything else fixed; inspect
+faces, eyes, hair, clothing, signage, architecture, textures, temporal flicker,
+identity drift, and object consistency. No alternate sigma is claimed better.
+Repeat with NATTEN if available, and compare FP8 to BF16 for finite pixels and
+quality. Queue twice to verify component reuse, then test residency off,
+keep-loaded off, interruption, and decoder OOM recovery on the target machine.
+
+This integration has not been validated with the full checkpoint on Linux
+CUDA and is experimental. Flex compilation, real NATTEN support, BF16/FP8
+numerical behavior, VRAM use, and video quality require that manual test.
+Attribution is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## mAI fal image edit
 
 Generic image generation and editing node under `mAI / Image`, registered as

@@ -1,0 +1,10 @@
+# Optional SoL H3 dependencies; install only in the target ComfyUI environment.
+# If installed Diffusers already exposes all required LTX-2.5 APIs, keep it.
+# This is the known API-compatible source revision, not a PyTorch requirement.
+diffusers @ https://github.com/huggingface/diffusers/archive/e0abab83b5df05de9e7abd788643c1a7c1e42e28.zip
+transformers>=5.12.1,<6
+accelerate>=1.14
+safetensors>=0.8
+huggingface_hub>=0.34
+# NATTEN is optional; match its build to the target Linux PyTorch/CUDA/GPU.
+# Flex uses the Linux Triton supplied with compatible PyTorch. No torch pin.
