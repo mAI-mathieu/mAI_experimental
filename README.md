@@ -156,6 +156,7 @@ Generic image generation and editing node under `mAI / Image`, registered as
 | [Ideogram 4.5 Edit](https://fal.ai/models/ideogram/v4.5/edit/api) (`ideogram/v4.5/edit`, default) | Required; exactly one image | Optional; white edits, black preserves |
 | [FLUX 3 Text to Image](https://fal.ai/models/blackforestlabs/flux-3/text-to-image/api) (`blackforestlabs/flux-3/text-to-image`) | Leave disconnected | Leave disconnected |
 | [FLUX 3 Edit Image](https://fal.ai/models/blackforestlabs/flux-3/edit-image/api) (`blackforestlabs/flux-3/edit-image`) | Required; a batch of 1-10 ordered references | Unsupported; disconnect or choose Ideogram |
+| [Nano Banana 2.1 Edit](https://fal.ai/models/google/nano-banana-2.1/edit/api) (`google/nano-banana-2.1/edit`) | Required; exactly one RGB image | Optional; mask reference guidance followed by local compositing |
 
 Inputs:
 
@@ -166,12 +167,15 @@ Inputs:
   upload. Ideogram can edit the whole image when no mask is connected. Its mask
   is thresholded at 0.5 and inverted for fal, and must match the image dimensions
   and contain both edit and preserve regions.
-- `quality`, `edit_precision`, `seed`: Ideogram only. Defaults remain `medium`,
-  `high`, and `-1` (random). These fields are not sent to FLUX 3.
-- `resolution`: FLUX 3 only; `512sq`, `768sq`, `1k` (default), `2k`, `4k`.
-- `aspect_ratio`: FLUX 3 only; `auto` (default) or a supported ratio. Auto follows
-  the first reference when editing.
-- `output_format`: FLUX 3 only; `png` (default) or `jpeg`.
+- `quality`, `edit_precision`: Ideogram only; defaults `medium` and `high`.
+- `seed`: Ideogram and Nano Banana; `-1` (default) lets the service choose.
+  Omitted from FLUX 3 requests; the seed output remains `-1` when absent.
+- `resolution`: FLUX 3 uses `512sq`, `768sq`, `1k` (default), `2k`, `4k`.
+  Nano Banana accepts only `1k`, `2k`, `4k`, translated to API values `1K`, `2K`, `4K`.
+- `aspect_ratio`: FLUX 3 and Nano Banana; `auto` (default) or a supported ratio.
+  Nano Banana masked editing requires `auto`. Extreme ratios `4:1`, `1:4`,
+  `8:1`, `1:8` are Nano Banana only; `2:1`, `7:5`, `5:7`, `1:2` are FLUX only.
+- `output_format`: FLUX 3 and Nano Banana; `png` (default) or `jpeg`.
 - `enable_prompt_expansion`: FLUX 3 only; default `false`.
 - `safety_tolerance`: FLUX 3 only; 0-4, default 2; 0 is strictest.
 
@@ -196,6 +200,34 @@ masked editing, select Ideogram and connect the mask as well. Each queue makes
 one new billable fal request. Offline tests: `python -m pytest`; fake-client
 tests check endpoint routing, reference order, validation, and decoded outputs.
 Live image quality and provider behavior require a paid request.
+
+### Nano Banana mask inpainting
+
+Select `google/nano-banana-2.1/edit`, paste your key into `api_key`, connect a
+single RGB image and matching-size `MASK`, set `aspect_ratio=auto`, and describe
+the replacement in `prompt`. **White edits, black preserves**; gray mask values
+blend the generated result with the original, preserving feathered edges.
+Leave the mask disconnected for ordinary whole-image editing.
+
+The endpoint has no native mask parameter. The node sends the source as image 1
+and a grayscale mask as image 2, adds explicit region-editing instructions, and
+makes one API request. It then resizes the returned image to source dimensions
+when needed and composites it locally using your mask. Black-mask pixels stay
+identical to the original tensor. Model compliance and alignment inside the
+mask are not guaranteed; the model can still alter geometry, and resizing may
+reduce detail. An empty mask, mismatched dimensions, or invalid mask values are
+rejected before upload. A fully white mask edits the whole image.
+
+With a mask, `image` contains the local composite at source dimensions;
+`image_url` and `response_json` refer to the raw fal result before compositing.
+Quality/precision, prompt expansion, and the FLUX safety widget are not sent to
+Nano Banana; it uses its own API defaults for those service settings.
+The [model gallery](https://fal.ai/models/google/nano-banana-2.1/edit) currently
+labels this endpoint integration-only; live availability depends on fal.
+No paid request was made during implementation. Run `python -m pytest` for mask
+orientation, soft-edge compositing, source preservation, and fake-client tests.
+For a live check, paint a small region and queue once, then compare the original
+and node output outside the mask. Existing registrations and outputs are unchanged.
 
 ## mAI fal ideogram edit
 

@@ -3,13 +3,14 @@ import os
 
 from ..utils.fal_ideogram_edit import EDIT_PRECISIONS, IDEOGRAM_EDIT_ENDPOINT, QUALITY_TIERS
 from ..utils.fal_image_edit import (
-    FLUX_3_ASPECT_RATIOS,
+    IMAGE_EDIT_ASPECT_RATIOS,
     FLUX_3_EDIT_ENDPOINT,
     FLUX_3_RESOLUTIONS,
     IMAGE_EDIT_ENDPOINTS,
     build_image_edit_arguments,
     prepare_image_edit_uploads,
 )
+from ..utils.fal_nano_banana_edit import NANO_BANANA_21_EDIT_ENDPOINT, composite_nano_banana_edit
 from ..utils.fal_image import (
     download_image_bytes, extract_image_url, get_result_seed, image_bytes_to_tensor,
 )
@@ -42,24 +43,24 @@ class MAIFalImageEdit:
                 ),
                 "seed": (
                     "INT",
-                    {"default": -1, "min": -1, "max": 0x7FFFFFFFFFFFFFFF, "tooltip": "Ideogram only. -1 chooses automatically."},
+                    {"default": -1, "min": -1, "max": 0x7FFFFFFFFFFFFFFF, "tooltip": "Ideogram and Nano Banana only. -1 chooses automatically."},
                 ),
                 "resolution": (
-                    list(FLUX_3_RESOLUTIONS), {"default": "1k", "tooltip": "FLUX 3 only."},
+                    list(FLUX_3_RESOLUTIONS), {"default": "1k", "tooltip": "FLUX 3 or Nano Banana (1k, 2k, 4k only)."},
                 ),
                 "aspect_ratio": (
-                    list(FLUX_3_ASPECT_RATIOS),
-                    {"default": "auto", "tooltip": "FLUX 3 only. Auto follows the first reference when editing."},
+                    list(IMAGE_EDIT_ASPECT_RATIOS),
+                    {"default": "auto", "tooltip": "FLUX 3 or Nano Banana. Masked Nano Banana requires auto. Extreme ratios are Nano Banana only."},
                 ),
-                "output_format": (["png", "jpeg"], {"default": "png", "tooltip": "FLUX 3 only."}),
+                "output_format": (["png", "jpeg"], {"default": "png", "tooltip": "FLUX 3 or Nano Banana."}),
                 "enable_prompt_expansion": ("BOOLEAN", {"default": False, "tooltip": "FLUX 3 only."}),
                 "safety_tolerance": (
                     "INT", {"default": 2, "min": 0, "max": 4, "tooltip": "FLUX 3 only. 0 is strictest."},
                 ),
             },
             "optional": {
-                "image": ("IMAGE", {"tooltip": "Edit endpoints only. FLUX 3 accepts a batch of up to 10 references."}),
-                "mask": ("MASK", {"tooltip": "Ideogram only. White edits, black preserves; must match image dimensions."}),
+                "image": ("IMAGE", {"tooltip": "Edit endpoints only. FLUX 3 accepts up to 10 references; Nano Banana accepts one RGB source."}),
+                "mask": ("MASK", {"tooltip": "Ideogram or Nano Banana. White edits, black preserves. Nano Banana uses mask reference guidance and local compositing, not a native mask API."}),
             },
         }
 
@@ -82,6 +83,7 @@ class MAIFalImageEdit:
         arguments = build_image_edit_arguments(
             model_endpoint, prompt, seed, edit_precision, quality, resolution,
             aspect_ratio, output_format, enable_prompt_expansion, safety_tolerance,
+            masked=mask is not None,
         )
         uploads = prepare_image_edit_uploads(model_endpoint, image, mask)
 
@@ -106,6 +108,8 @@ class MAIFalImageEdit:
                 arguments["mask_url"] = urls[1]
         elif model_endpoint == FLUX_3_EDIT_ENDPOINT:
             arguments["image_urls"] = urls
+        elif model_endpoint == NANO_BANANA_21_EDIT_ENDPOINT:
+            arguments["image_urls"] = urls
 
         try:
             result = client.subscribe(model_endpoint, arguments=arguments)
@@ -117,6 +121,8 @@ class MAIFalImageEdit:
             output_image = image_bytes_to_tensor(download_image_bytes(image_url))
         except Exception as exc:
             raise RuntimeError(f"Could not download or decode the image returned by fal: {exc}") from exc
+        if model_endpoint == NANO_BANANA_21_EDIT_ENDPOINT and mask is not None:
+            output_image = composite_nano_banana_edit(image, output_image, mask)
         return (
             output_image, image_url, get_result_seed(result),
             json.dumps(result, ensure_ascii=False, default=str),

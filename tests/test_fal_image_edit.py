@@ -114,7 +114,7 @@ def test_invalid_connections_fail_before_client_creation(monkeypatch, endpoint, 
         )
 
 
-@pytest.mark.parametrize("endpoint", IMAGE_EDIT_ENDPOINTS)
+@pytest.mark.parametrize("endpoint", [IDEOGRAM_EDIT_ENDPOINT, FLUX_3_TEXT_ENDPOINT, FLUX_3_EDIT_ENDPOINT])
 def test_generic_node_submits_endpoint_specific_payload_and_decodes_output(monkeypatch, endpoint):
     np = pytest.importorskip("numpy")
     pytest.importorskip("torch")

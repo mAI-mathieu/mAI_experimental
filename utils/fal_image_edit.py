@@ -6,14 +6,26 @@ from .fal_ideogram_edit import (
     prepare_ideogram_edit_inputs,
 )
 from .fal_image import image_batch_to_png_bytes
+from .fal_nano_banana_edit import (
+    NANO_BANANA_21_ASPECT_RATIOS,
+    NANO_BANANA_21_EDIT_ENDPOINT,
+    build_nano_banana_21_arguments,
+    prepare_nano_banana_21_uploads,
+)
 
 FLUX_3_TEXT_ENDPOINT = "blackforestlabs/flux-3/text-to-image"
 FLUX_3_EDIT_ENDPOINT = "blackforestlabs/flux-3/edit-image"
-IMAGE_EDIT_ENDPOINTS = (IDEOGRAM_EDIT_ENDPOINT, FLUX_3_TEXT_ENDPOINT, FLUX_3_EDIT_ENDPOINT)
+IMAGE_EDIT_ENDPOINTS = (
+    IDEOGRAM_EDIT_ENDPOINT, FLUX_3_TEXT_ENDPOINT, FLUX_3_EDIT_ENDPOINT,
+    NANO_BANANA_21_EDIT_ENDPOINT,
+)
 FLUX_3_RESOLUTIONS = ("512sq", "768sq", "1k", "2k", "4k")
 FLUX_3_ASPECT_RATIOS = (
     "auto", "21:9", "2:1", "16:9", "3:2", "7:5", "4:3", "5:4",
     "1:1", "4:5", "3:4", "5:7", "2:3", "9:16", "1:2",
+)
+IMAGE_EDIT_ASPECT_RATIOS = FLUX_3_ASPECT_RATIOS + tuple(
+    ratio for ratio in NANO_BANANA_21_ASPECT_RATIOS if ratio not in FLUX_3_ASPECT_RATIOS
 )
 
 
@@ -21,13 +33,17 @@ def build_image_edit_arguments(
     endpoint: str, prompt: str, seed: int = -1, edit_precision: str = "high",
     quality: str = "medium", resolution: str = "1k", aspect_ratio: str = "auto",
     output_format: str = "png", enable_prompt_expansion: bool = False,
-    safety_tolerance: int = 2,
+    safety_tolerance: int = 2, masked: bool = False,
 ) -> dict[str, Any]:
     """Send only the selected endpoint's supported settings."""
     if endpoint not in IMAGE_EDIT_ENDPOINTS:
         raise ValueError(f"Unsupported model_endpoint: {endpoint}")
     if endpoint == IDEOGRAM_EDIT_ENDPOINT:
         return build_ideogram_edit_arguments(prompt, seed, edit_precision, quality)
+    if endpoint == NANO_BANANA_21_EDIT_ENDPOINT:
+        return build_nano_banana_21_arguments(
+            prompt, seed, resolution, aspect_ratio, output_format, masked,
+        )
     if not isinstance(prompt, str) or not prompt.strip():
         raise ValueError("prompt cannot be empty")
     if resolution not in FLUX_3_RESOLUTIONS:
@@ -68,6 +84,8 @@ def prepare_image_edit_uploads(
         return []
     if image is None:
         raise ValueError(f"'{endpoint}' requires a connected image.")
+    if endpoint == NANO_BANANA_21_EDIT_ENDPOINT:
+        return prepare_nano_banana_21_uploads(image, mask)
     if endpoint == IDEOGRAM_EDIT_ENDPOINT and mask is not None:
         source_png, mask_png = prepare_ideogram_edit_inputs(image, mask)
         return [("comfy_source.png", source_png), ("comfy_mask.png", mask_png)]
