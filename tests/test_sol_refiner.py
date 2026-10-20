@@ -214,7 +214,10 @@ def test_queue_validation_accepts_complete_local_model(monkeypatch, model_packag
 
 
 def test_node_registration_and_defaults():
-    assert set(NODE_CLASS_MAPPINGS) == {"MAIExampleTextNode", "MAIFalImage", "MAIFalIdeogramEdit", "MAIFalImageEdit", "MAISoLH3Loader", "MAISoLH3Refiner"}
+    assert set(NODE_CLASS_MAPPINGS) == {
+        "MAIExampleTextNode", "MAIFalImage", "MAIFalIdeogramEdit", "MAIFalImageEdit",
+        "MAIFalVideo", "MAISoLH3Loader", "MAISoLH3Refiner",
+    }
     loader = NODE_CLASS_MAPPINGS["MAISoLH3Loader"]
     refiner = NODE_CLASS_MAPPINGS["MAISoLH3Refiner"]
     assert NODE_DISPLAY_NAME_MAPPINGS["MAISoLH3Loader"] == "mAI SoL H3 Loader"

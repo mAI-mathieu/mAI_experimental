@@ -2,6 +2,65 @@
 
 Small experimental nodes for ComfyUI.
 
+## mAI fal video
+
+Generate video with [MiniMax H3](https://fal.ai/models/minimax/h3/image-to-video/api)
+or [Wan 3.0](https://fal.ai/models/alibaba/wan-3.0/image-to-video/api).
+Registered as `MAIFalVideo` under **mAI / Video**. Requires `fal-client` from
+this pack's existing requirements and a ComfyUI version with native `VIDEO`
+support. No additional dependencies or local generation models are needed.
+
+### Inputs and defaults
+
+- `api_key`: enter your fal API key directly in the node; required, initially blank.
+  This widget is saved with workflows; remove the key before sharing them.
+- `model_endpoint`: MiniMax H3 (default) or Wan 3.0.
+- `first_frame`: required `IMAGE`. `last_frame`: optional `IMAGE`; leave it
+  disconnected for first-frame-only animation. Each socket accepts exactly one
+  image, not a batch. Frames upload as PNG at their original dimensions.
+- `prompt`: describes motion. Required for MiniMax; may be blank for Wan.
+- `duration`: 5 seconds by default; MiniMax accepts 5-15, Wan accepts 2-30.
+- `resolution`: `model default` selects MiniMax `2K` or Wan `1080p` automatically.
+  MiniMax options: `480P`, `768P`, `2K`, `4K`; Wan: `480p`, `720p`, `1080p`.
+  Choose a compatible option when overriding the default.
+- `seed`: `-1` requests a random seed; otherwise 0-2147483647.
+- `prompt_expansion_mode`: MiniMax only; `balanced` (default), `disabled`,
+  `fast`, or `quality`.
+- Wan only: `aspect_ratio` (`adaptive` by default), `audio` (on),
+  `enable_prompt_expansion` (on), `enable_thinking` (off), and `smart_duration`
+  (off). Smart duration ignores the seconds widget and lets Wan choose a length.
+  Turn it off for MiniMax. Other model-specific controls are ignored when
+  inapplicable. MiniMax follows the first image's canvas and uses its service's
+  audio behavior; the Wan audio toggle does not control MiniMax.
+
+### Outputs and limitations
+
+Outputs, in order: `video` (`VIDEO`), `video_url` (`STRING`), `seed` (`INT`),
+and `response_json` (`STRING`). The seed output is the actual returned seed,
+or `-1` when absent (including MiniMax responses without a seed).
+
+Connect `video` to ComfyUI's **Save Video** to save/preview the result, or
+**Get Video Components** to extract frames, audio, and FPS. Connect those
+frames to SoL refinement if desired. The original encoded video, including
+any soundtrack, is kept in RAM until downstream nodes save or decode it.
+Long high-resolution clips and decoded frames can use substantial memory.
+
+Each queued run uploads frames to fal and starts a **new billable generation**.
+Invalid local settings and image batches are rejected before uploads. Service
+limits can change; fal performs final validation. A failed download/open error
+includes the completed video's URL for recovery without paying to regenerate.
+The node does not automatically retry generation or permanently save videos.
+
+### Testing
+
+Run `python -m pytest tests/test_fal_video.py` for pure argument validation and
+mocked upload/generation/download tests; these do not contact fal or spend credits.
+For a live test, restart ComfyUI, refresh the browser, add **mAI fal video**,
+enter your key, connect **Load Image** to `first_frame`, optionally connect a
+second **Load Image** to `last_frame`, and connect `video` to **Save Video**.
+Start with 5 seconds and `model default`, queue once, then repeat with the other
+model. Confirm the motion and endpoint frames and, for Wan, the audio setting.
+
 ## mAI SoL H3 Loader and mAI SoL H3 Refiner
 
 Native one-step generative video refinement/upscaling using
