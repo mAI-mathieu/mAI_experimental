@@ -217,6 +217,7 @@ def test_node_registration_and_defaults():
     assert set(NODE_CLASS_MAPPINGS) == {
         "MAIExampleTextNode", "MAIFalImage", "MAIFalIdeogramEdit", "MAIFalImageEdit",
         "MAIFalVideo", "MAISoLH3Loader", "MAISoLH3Refiner",
+        "MAIH3Multiframe",
     }
     loader = NODE_CLASS_MAPPINGS["MAISoLH3Loader"]
     refiner = NODE_CLASS_MAPPINGS["MAISoLH3Refiner"]

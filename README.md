@@ -2,6 +2,72 @@
 
 Small experimental nodes for ComfyUI.
 
+## mAI H3 multiframe
+
+Prepare **MiniMax H3** reference conditioning and timed still-image guides in
+one node, registered as `MAIH3Multiframe` under **mAI / Video**. Outputs are
+`positive` (`CONDITIONING`), then `latent` (`LATENT`, native H3 audio/video).
+Uses ComfyUI's native **MiniMax H3 Reference to Video** and **Add Guide for
+MiniMax H3** implementations. Requires those nodes and the H3 ref2va model,
+text encoder and video VAE from your existing H3 workflow. No new dependencies.
+
+Connect the H3 `clip` and video `vae`, write the `prompt`, and set `width`,
+`height` (multiples of 32), and `duration` in seconds. Defaults: 1344x768,
+5 seconds, `ref_image_size=match`, two visible rows. Increase `reference_count`
+(1–9) to show more rows. Each row has a file selector, upload button, preview,
+and `time_N` in seconds. Alternatively connect `image_N` from **Load Image** or
+another node; that socket overrides the row's selected file. Empty rows and
+rows above `reference_count` are ignored. IMAGE sockets always stay available.
+Without frontend JS, all file/time widgets remain available and the backend
+still works with existing local files, IMAGE inputs, or JSON.
+
+Alternatively fill `reference_json` (or convert it to a STRING input):
+
+```json
+[
+  {"image": "references/shot1.png", "time": 0},
+  {"image": "references/shot2.png", "time": 1.5},
+  {"image": "references/shot3.png", "time": 3},
+  {"image": "references/shot4.png", "time": 5}
+]
+```
+
+Non-empty JSON **replaces all rows/socket images** and ignores `reference_count`.
+Use a list of 1–9 objects, each containing exactly `image` and `time`. Paths
+are relative to ComfyUI's `input` directory or absolute local file paths; use
+forward slashes in JSON, including for Windows paths. URLs and network shares
+are unsupported. Files stay local; this node does not call a generation API.
+Changes to selected/JSON image file contents invalidate the node's cache.
+
+Every supplied image becomes a timeline guide, including an image at 0s.
+`use_as_references=true` (default) also exposes them as `<Picture 1>`,
+`<Picture 2>`, etc. in **entry order**, even if timestamps are out of order;
+empty rows do not reserve a Picture number. Use these tags in the prompt.
+Turn this off for timed guides without semantic image references; Picture tags
+then have no images to refer to. The `max` reference size may use more memory
+and be slower than `match`. H3 guides use an aspect-preserving center crop to
+the generation canvas; semantic references preserve their aspect ratio.
+
+Times round to the nearest frame at **24 fps**. Duration rounds at 24 fps then
+snaps up to H3's `17k+5` grid, matching the example workflow (5s → 124 frames;
+the last frame is at 5.125s). Distinct times resolving to the same frame and
+times outside that generated frame range are rejected. Times are absolute,
+non-negative seconds; changing output playback FPS does not change anchoring.
+This node supports still images only, one per entry; image batches/animated
+files and audio/video guide inputs are unsupported. H3's trained duration
+range is approximately 5–15 seconds; shorter clips may have reduced quality.
+Guides condition generation and do not guarantee pixel-identical output frames.
+
+To test in ComfyUI: restart and refresh, add **mAI H3 multiframe**, connect the
+same H3 CLIP and video VAE as in the example workflow, and add images at 0,
+1.5, 3 and 5 seconds. Connect `positive` to **Basic Guider** and `latent` to
+**SamplerCustomAdvanced → latent_image**, replacing the reference node and
+Add Guide chain. Keep your model, sampler, sigmas, decoding and save nodes.
+The audio VAE remains connected to the downstream audio decoder. Repeat with
+JSON and connected IMAGE inputs; save/reload to check rows and times persist.
+Run `python -m pytest tests/test_h3_multiframe.py` for pure timeline/JSON checks
+and mocked integration tests without GPU/model execution.
+
 ## mAI fal video
 
 Generate video with [MiniMax H3](https://fal.ai/models/minimax/h3/image-to-video/api)
