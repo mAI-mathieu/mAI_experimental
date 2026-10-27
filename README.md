@@ -13,13 +13,21 @@ text encoder and video VAE from your existing H3 workflow. No new dependencies.
 
 Connect the H3 `clip` and video `vae`, write the `prompt`, and set `width`,
 `height` (multiples of 32), and `duration` in seconds. Defaults: 1344x768,
-5 seconds, `ref_image_size=match`, two visible rows. Increase `reference_count`
-(1–9) to show more rows. Each row has a file selector, upload button, preview,
-and `time_N` in seconds. Alternatively connect `image_N` from **Load Image** or
-another node; that socket overrides the row's selected file. Empty rows and
-rows above `reference_count` are ignored. IMAGE sockets always stay available.
+5 seconds, `ref_image_size=match`, one empty image row. Selecting/uploading an
+image or connecting its IMAGE socket automatically exposes another empty row
+and socket, up to nine images. Each row has a file selector, upload button,
+preview, `time_N` in seconds, and **Remove image N**. Removing a row clears its
+file and disconnects its IMAGE input; clearing a file or disconnecting an input
+also shrinks unused entries. A disconnected row keeps its selected file, if any.
+Other images keep their timestamps and socket names, so gaps in numbering are
+normal. There is always one spare empty entry until all nine entries are used.
+Alternatively connect `image_N` from **Load Image** or another node; that socket
+overrides the row's selected file. The existing `reference_count` field is
+updated automatically and hidden in the UI, preserving the backend API.
 Without frontend JS, all file/time widgets remain available and the backend
-still works with existing local files, IMAGE inputs, or JSON.
+still works with existing local files, IMAGE inputs, or JSON; set
+`reference_count` manually in that case. JSON hides the row controls and spare
+socket, while existing connected image links are retained for switching back.
 
 Alternatively fill `reference_json` (or convert it to a STRING input):
 
@@ -65,8 +73,12 @@ same H3 CLIP and video VAE as in the example workflow, and add images at 0,
 Add Guide chain. Keep your model, sampler, sigmas, decoding and save nodes.
 The audio VAE remains connected to the downstream audio decoder. Repeat with
 JSON and connected IMAGE inputs; save/reload to check rows and times persist.
+Fill the spare row to check automatic growth, then remove a middle image and
+the last image to check shrinking and that remaining times/links are preserved.
 Run `python -m pytest tests/test_h3_multiframe.py` for pure timeline/JSON checks
 and mocked integration tests without GPU/model execution.
+Run `node --test tests/test_h3_multiframe_frontend.mjs` for dynamic input,
+removal, upload, and save/reload regression checks without a running ComfyUI.
 
 ## mAI fal video
 

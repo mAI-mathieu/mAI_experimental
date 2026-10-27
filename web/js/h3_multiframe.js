@@ -20,14 +20,73 @@ function setVisible(widget, visible) {
 }
 
 function updateRows(node, resize = true) {
-    const count = Number(node.widgets.find((w) => w.name === "reference_count")?.value ?? 2);
-    const json = String(node.widgets.find((w) => w.name === "reference_json")?.value ?? "").trim();
-    for (const row of node.maiImageRows ?? []) {
-        for (const widget of row.widgets) setVisible(widget, !json && row.index <= count);
+    if (!node.maiImageRows || node.maiUpdatingRows) return;
+    node.maiUpdatingRows = true;
+    try {
+        const json = String(node.widgets.find((w) => w.name === "reference_json")?.value ?? "").trim();
+        const connected = new Set(node.inputs
+            .filter((slot) => slot.link != null && /^image_\d+$/.test(slot.name))
+            .map((slot) => Number(slot.name.slice(6))));
+        const occupied = node.maiImageRows.filter((row) => {
+            const path = row.widgets[0].value;
+            return connected.has(row.index) || (path && path !== "(none)");
+        }).map((row) => row.index);
+        const last = Math.max(0, ...occupied);
+        // Prefer a spare after the existing rows. Reuse earlier holes at the limit.
+        const spare = node.maiImageRows.find((row) => row.index > last)
+            ?? node.maiImageRows.find((row) => !occupied.includes(row.index));
+        const visible = new Set(occupied);
+        if (spare && !json) visible.add(spare.index);
+        for (const row of node.maiImageRows) {
+            for (const widget of row.widgets) setVisible(widget, !json && visible.has(row.index));
+        }
+        // Remove only unused IMAGE sockets. LiteGraph updates remaining link indexes.
+        // Connected sockets survive JSON mode so returning to rows restores the links.
+        for (let slot = node.inputs.length - 1; slot >= 0; slot--) {
+            const input = node.inputs[slot];
+            if (/^image_\d+$/.test(input.name)) {
+                const index = Number(input.name.slice(6));
+                if (!connected.has(index) && (json || !visible.has(index))) node.removeInput(slot);
+            }
+        }
+        if (!json) {
+            for (const row of node.maiImageRows) {
+                if (visible.has(row.index) && !node.inputs.some((slot) => slot.name === `image_${row.index}`)) {
+                    node.addInput(`image_${row.index}`, "IMAGE");
+                }
+            }
+        }
+        // Keep the released backend field for old workflows and API clients.
+        const count = node.widgets.find((widget) => widget.name === "reference_count");
+        if (count) {
+            count.value = Math.max(1, last);
+            setVisible(count, false);
+        }
+        if (resize) node.setSize([Math.max(node.size[0], 380), node.computeSize()[1]]);
+        node.setDirtyCanvas(true, true);
+    } finally {
+        node.maiUpdatingRows = false;
     }
-    // IMAGE sockets stay in place so links and saved socket indexes remain stable.
-    if (resize) node.setSize([Math.max(node.size[0], 380), node.computeSize()[1]]);
-    node.setDirtyCanvas(true, true);
+}
+
+function scheduleRows(node) {
+    if (node.maiUpdatingRows || node.maiRowsScheduled) return;
+    node.maiRowsScheduled = true;
+    // Connection callbacks can fire partway through LiteGraph's link updates.
+    queueMicrotask(() => {
+        node.maiRowsScheduled = false;
+        updateRows(node);
+    });
+}
+
+function removeImage(node, row) {
+    const slot = node.inputs.findIndex((input) => input.name === `image_${row.index}`);
+    if (slot >= 0 && node.inputs[slot].link != null) node.disconnectInput(slot);
+    const file = row.widgets[0];
+    file.value = "(none)";
+    file.callback?.(file.value);
+    // Other rows retain their file selections, timestamps, names, and links.
+    updateRows(node);
 }
 
 async function uploadImage(node, fileWidget, file) {
@@ -124,7 +183,12 @@ app.registerExtension({
                 if (!file || !time) continue;
                 const button = this.addWidget("button", `Upload image ${index}`, null, () => chooseImage(this, file), { serialize: false });
                 const preview = addPreview(this, index, file);
-                this.maiImageRows.push({ index, widgets: [file, time, button, preview] });
+                const row = { index, widgets: [file, time, button, preview] };
+                const remove = this.addWidget("button", `Remove image ${index}`, null, () => removeImage(this, row), { serialize: false });
+                row.widgets.push(remove);
+                this.maiImageRows.push(row);
+                const callback = file.callback;
+                file.callback = (...args) => { callback?.apply(file, args); updateRows(this); };
             }
             // Put each uploader and preview directly after its image/time fields.
             const rowWidgets = new Set(this.maiImageRows.flatMap((row) => row.widgets));
@@ -142,8 +206,26 @@ app.registerExtension({
         const onConfigure = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function () {
             const result = onConfigure?.apply(this, arguments);
-            updateRows(this, false);
+            scheduleRows(this);
             return result;
+        };
+        const onConnectionsChange = nodeType.prototype.onConnectionsChange;
+        nodeType.prototype.onConnectionsChange = function () {
+            const result = onConnectionsChange?.apply(this, arguments);
+            scheduleRows(this);
+            return result;
+        };
+        const configure = nodeType.prototype.configure;
+        nodeType.prototype.configure = function (data) {
+            if (Array.isArray(data.inputs)) {
+                // ComfyUI merges default inputs before restoring saved ones. Match
+                // the saved order first, or a removed default spare could shift
+                // the target indexes of restored image links.
+                const existing = new Map(this.inputs.map((input) => [input.name, input]));
+                this.inputs.splice(0, this.inputs.length, ...data.inputs.map((input) =>
+                    existing.get(input.name) ?? { ...input, link: null }));
+            }
+            return configure?.apply(this, arguments);
         };
     },
 });
