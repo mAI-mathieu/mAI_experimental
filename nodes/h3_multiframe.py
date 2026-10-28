@@ -97,15 +97,21 @@ class MAIH3Multiframe:
         # Custom validation lets unused/overridden file selectors keep saved values,
         # even when those files are no longer in the input directory's combo list.
         try:
-            length = validate_settings(
-                kwargs.get("width", 1344), kwargs.get("height", 768),
-                kwargs.get("duration", 5.0), kwargs.get("reference_count", 2),
-                kwargs.get("ref_image_size", "match"),
-            )
-            entries = parse_reference_json(kwargs.get("reference_json", ""))
-            if entries is not None:
-                _, times = resolve_picture_roles(entries, kwargs.get("use_as_references", True))
-                if times:
+            # ComfyUI supplies None for connected values during queue validation.
+            # Validate the known literals here; prepare() validates every actual
+            # resolved value before loading images or encoding conditioning.
+            settings = {
+                "width": 1344, "height": 768, "duration": 5.0,
+                "reference_count": 2, "ref_image_size": "match",
+            }
+            settings.update({name: kwargs[name] for name in settings if kwargs.get(name) is not None})
+            length = validate_settings(**settings)
+            reference_json = kwargs.get("reference_json", "")
+            entries = parse_reference_json(reference_json) if reference_json is not None else None
+            reference_default = kwargs.get("use_as_references", True)
+            if entries is not None and reference_default is not None:
+                _, times = resolve_picture_roles(entries, reference_default)
+                if times and kwargs.get("duration", 5.0) is not None:
                     resolve_guide_frames(times, length)
         except ValueError as exc:
             return str(exc)
@@ -113,6 +119,10 @@ class MAIH3Multiframe:
 
     @classmethod
     def IS_CHANGED(cls, reference_json="", reference_count=2, **kwargs):
+        # Fingerprints are also requested before linked values are available.
+        # Without the JSON/count we cannot know which local files to hash yet.
+        if reference_json is None or reference_count is None:
+            return float("nan")
         loader = get_image_loader()
         hashes = []
         for path, _, image, _ in file_entries(reference_json, reference_count, kwargs):

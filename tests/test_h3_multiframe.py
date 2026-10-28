@@ -315,3 +315,55 @@ def test_reference_times_do_not_conflict_with_guide_times(runtime):
     positive, _ = MAIH3Multiframe().prepare("clip", "vae", "prompt", image_1=runtime.image,
         image_2=runtime.image, time_1=0, time_2=0, use_as_reference_2="no")
     assert positive == [0]
+
+
+@pytest.mark.parametrize("linked", [
+    {"width": None}, {"height": None}, {"width": None, "height": None},
+    {"duration": None}, {"reference_count": None}, {"ref_image_size": None},
+    {"reference_json": None}, {"use_as_references": None},
+])
+def test_queue_validation_accepts_unresolved_connected_values(linked):
+    # ComfyUI's get_input_data() supplies None for links before execution.
+    assert MAIH3Multiframe.VALIDATE_INPUTS(**linked) is True
+
+
+def test_queue_validation_defers_timeline_bounds_until_linked_duration_is_known():
+    payload = '[{"image":"a.png","time":10,"use_as_reference":false}]'
+    assert MAIH3Multiframe.VALIDATE_INPUTS(duration=None, reference_json=payload) is True
+    assert "outside" in MAIH3Multiframe.VALIDATE_INPUTS(duration=5, reference_json=payload)
+    assert MAIH3Multiframe.VALIDATE_INPUTS(duration=15, reference_json=payload) is True
+
+
+def test_queue_validation_defers_default_picture_role_until_linked_setting_is_known():
+    payload = '[{"image":"a.png"}]'
+    assert MAIH3Multiframe.VALIDATE_INPUTS(use_as_references=None, reference_json=payload) is True
+    assert "seconds" in MAIH3Multiframe.VALIDATE_INPUTS(use_as_references=False, reference_json=payload)
+
+
+def test_queue_validation_still_checks_known_values_with_other_inputs_linked():
+    assert "height" in MAIH3Multiframe.VALIDATE_INPUTS(width=None, height=641)
+    assert "width" in MAIH3Multiframe.VALIDATE_INPUTS(width=641, height=None)
+    assert "duration" in MAIH3Multiframe.VALIDATE_INPUTS(width=None, duration=-1)
+    assert "Invalid reference_json" in MAIH3Multiframe.VALIDATE_INPUTS(width=None, reference_json="[")
+
+
+@pytest.mark.parametrize("settings", [
+    {"width": None}, {"height": None}, {"width": 641}, {"height": 0},
+])
+def test_execution_rejects_invalid_resolved_dimensions_before_loading(runtime, settings):
+    with pytest.raises(ValueError, match="width|height"):
+        MAIH3Multiframe().prepare("clip", "vae", "prompt", image_1=runtime.image, **settings)
+    assert not runtime.calls
+
+
+def test_execution_uses_connected_dimensions_for_latent_creation(runtime):
+    MAIH3Multiframe().prepare("clip", "vae", "prompt", image_1=runtime.image, width=640, height=640)
+    ref = next(args for name, args in runtime.calls if name == "reference")
+    assert (ref["width"], ref["height"]) == (640, 640)
+
+
+def test_file_fingerprint_handles_unresolved_connected_settings(runtime):
+    import math
+    assert MAIH3Multiframe.IS_CHANGED(width=None, height=None, image_file_1="a.png") == ("hash:a.png",)
+    assert math.isnan(MAIH3Multiframe.IS_CHANGED(reference_json=None))
+    assert math.isnan(MAIH3Multiframe.IS_CHANGED(reference_count=None))

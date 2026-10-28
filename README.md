@@ -28,6 +28,11 @@ Without frontend JS, all file/time widgets remain available and the backend
 still works with existing local files, IMAGE inputs, or JSON; set
 `reference_count` manually in that case.
 
+`width` and `height` can be connected to a resolution selector's INT outputs.
+Connected values are checked after their source nodes execute; they must still
+be multiples of 32 between 32 and 16384. Connected duration, JSON, and other
+settings also defer checks that require their actual values until execution.
+
 Alternatively fill `reference_json` (or convert it to a STRING input):
 
 ```json
@@ -87,6 +92,8 @@ JSON and connected IMAGE inputs; save/reload to check rows and times persist.
 The reference row should hide its time field and bind to `<Picture 1>`; only
 the other images should anchor timestamps. Repeat with explicit flags in JSON,
 leaving `time` out of the reference entry. Check automatic growth/removal too.
+Connect a resolution selector to `width` and `height`, queue with a valid
+32-aligned resolution, then save/reload to check those links remain connected.
 Run `python -m pytest tests/test_h3_multiframe.py` for pure timeline/JSON checks
 and mocked integration tests without GPU/model execution.
 Run `node --test tests/test_h3_multiframe_frontend.mjs` for widget visibility and
