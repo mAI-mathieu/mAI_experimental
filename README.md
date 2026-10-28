@@ -13,44 +13,62 @@ text encoder and video VAE from your existing H3 workflow. No new dependencies.
 
 Connect the H3 `clip` and video `vae`, write the `prompt`, and set `width`,
 `height` (multiples of 32), and `duration` in seconds. Defaults: 1344x768,
-5 seconds, `ref_image_size=match`, two visible rows. Increase `reference_count`
-(1–9) to show more rows. Each row has a file selector, upload button, preview,
-and `time_N` in seconds. Alternatively connect `image_N` from **Load Image** or
-another node; that socket overrides the row's selected file. Empty rows and
-rows above `reference_count` are ignored. IMAGE sockets always stay available.
+5 seconds, `ref_image_size=match`, one empty row. Selecting/uploading an image
+or connecting its IMAGE socket exposes one more empty row, up to nine images.
+Each row has a file selector, upload button, preview, **Remove image N**, and
+`use_as_reference_N` (`default`, `yes`, or `no`). Timed guides also show `time_N`
+in seconds; reference-only images hide it. Alternatively connect `image_N` from
+**Load Image** or another node; that socket overrides the row's selected file.
+Removing an image clears its file and disconnects its input. Other images keep
+their times and socket names; numbering gaps are normal. Clearing a file or
+disconnecting an input shrinks unused entries, but a disconnected input keeps
+its selected file. The existing `reference_count` field is hidden and updated
+automatically. JSON hides rows and spare sockets, retaining connected links.
 Without frontend JS, all file/time widgets remain available and the backend
-still works with existing local files, IMAGE inputs, or JSON.
+still works with existing local files, IMAGE inputs, or JSON; set
+`reference_count` manually in that case.
 
 Alternatively fill `reference_json` (or convert it to a STRING input):
 
 ```json
 [
-  {"image": "references/shot1.png", "time": 0},
-  {"image": "references/shot2.png", "time": 1.5},
-  {"image": "references/shot3.png", "time": 3},
-  {"image": "references/shot4.png", "time": 5}
+  {"image": "references/character.png", "use_as_reference": true},
+  {"image": "references/shot2.png", "time": 1.5, "use_as_reference": false},
+  {"image": "references/shot3.png", "time": 3, "use_as_reference": false}
 ]
 ```
 
 Non-empty JSON **replaces all rows/socket images** and ignores `reference_count`.
-Use a list of 1–9 objects, each containing exactly `image` and `time`. Paths
+Use a list of 1–9 objects, each containing `image`, with optional
+`use_as_reference` (JSON `true` or `false`). Omit that flag to follow the global
+default. Timed guides require `time`; reference-only images do not need it and
+ignore it if present.
+JSON overrides the per-row reference controls too. Paths
 are relative to ComfyUI's `input` directory or absolute local file paths; use
 forward slashes in JSON, including for Windows paths. URLs and network shares
 are unsupported. Files stay local; this node does not call a generation API.
 Changes to selected/JSON image file contents invalidate the node's cache.
 
-Every supplied image becomes a timeline guide, including an image at 0s.
-`use_as_references=true` (default) also exposes them as `<Picture 1>`,
-`<Picture 2>`, etc. in **entry order**, even if timestamps are out of order;
-empty rows do not reserve a Picture number. Use these tags in the prompt.
-Turn this off for timed guides without semantic image references; Picture tags
-then have no images to refer to. The `max` reference size may use more memory
+Each image has exactly one role. Choose **per picture**: `yes` uses that image
+only as a semantic reference for identity/appearance/style, with no timeline
+anchor; `no` uses it only as image conditioning at the chosen timestamp. `default`
+follows the existing `use_as_references` global setting (on initially), labeled
+**default use as reference** in the UI. Explicit `yes`/`no` override that setting.
+Existing file selections and times are retained on reload, but reference images
+no longer double as timed guides. Set a row to `no` to use its saved timestamp.
+
+Only reference-enabled images receive `<Picture 1>`, `<Picture 2>`, etc., in
+**entry order**, even if timestamps are out of order. Disabled/empty rows do not
+reserve a Picture number: if rows 1 and 3 are enabled and row 2 is disabled,
+row 3 is `<Picture 2>`. Update your prompt tags when changing these selections.
+With all references disabled, Picture tags have no attached images.
+The `max` reference size may use more memory
 and be slower than `match`. H3 guides use an aspect-preserving center crop to
 the generation canvas; semantic references preserve their aspect ratio.
 
 Times round to the nearest frame at **24 fps**. Duration rounds at 24 fps then
 snaps up to H3's `17k+5` grid, matching the example workflow (5s → 124 frames;
-the last frame is at 5.125s). Distinct times resolving to the same frame and
+the last frame is at 5.125s). For timed guides, distinct times resolving to the same frame and
 times outside that generated frame range are rejected. Times are absolute,
 non-negative seconds; changing output playback FPS does not change anchoring.
 This node supports still images only, one per entry; image batches/animated
@@ -59,14 +77,20 @@ range is approximately 5–15 seconds; shorter clips may have reduced quality.
 Guides condition generation and do not guarantee pixel-identical output frames.
 
 To test in ComfyUI: restart and refresh, add **mAI H3 multiframe**, connect the
-same H3 CLIP and video VAE as in the example workflow, and add images at 0,
-1.5, 3 and 5 seconds. Connect `positive` to **Basic Guider** and `latent` to
+same H3 CLIP and video VAE as in the example workflow. Set one picture to `yes`
+for a reference, and others to `no` with times of 0, 1.5 and 3 seconds.
+Connect `positive` to **Basic Guider** and `latent` to
 **SamplerCustomAdvanced → latent_image**, replacing the reference node and
 Add Guide chain. Keep your model, sampler, sigmas, decoding and save nodes.
 The audio VAE remains connected to the downstream audio decoder. Repeat with
 JSON and connected IMAGE inputs; save/reload to check rows and times persist.
+The reference row should hide its time field and bind to `<Picture 1>`; only
+the other images should anchor timestamps. Repeat with explicit flags in JSON,
+leaving `time` out of the reference entry. Check automatic growth/removal too.
 Run `python -m pytest tests/test_h3_multiframe.py` for pure timeline/JSON checks
 and mocked integration tests without GPU/model execution.
+Run `node --test tests/test_h3_multiframe_frontend.mjs` for widget visibility and
+legacy/new workflow restoration checks.
 
 ## mAI fal video
 

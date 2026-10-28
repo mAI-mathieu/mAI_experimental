@@ -7,6 +7,7 @@ from ..nodes import h3_multiframe as node_module
 from ..nodes.h3_multiframe import MAIH3Multiframe
 from ..utils.h3_multiframe import (
     duration_to_length, parse_reference_json, resolve_guide_frames, validate_settings,
+    resolve_reference_flag,
 )
 from ..utils.h3_reference_images import H3ImageLoader, resolve_image_path
 
@@ -40,12 +41,12 @@ def test_invalid_times(times, match):
 
 def test_json_paths_and_blank_fallback():
     assert parse_reference_json(" \n ") is None
-    assert parse_reference_json('[{"image":"refs/a.png","time":1.5}]') == [("refs/a.png", 1.5)]
-    assert parse_reference_json('[{"image":"C:/references/a.png","time":0}]') == [("C:/references/a.png", 0)]
+    assert parse_reference_json('[{"image":"refs/a.png","time":1.5}]') == [("refs/a.png", 1.5, None)]
+    assert parse_reference_json('[{"image":"C:/references/a.png","time":0}]') == [("C:/references/a.png", 0, None)]
 
 
 @pytest.mark.parametrize("value", [
-    "[", "{}", "[]", "null", '[{"image":"a.png"}]',
+    "[", "{}", "[]", "null", '[{"time":0}]',
     '[{"image":"","time":0}]', '[{"image":12,"time":0}]',
     '[{"image":"https://example.org/a.png","time":0}]',
     '[{"image":"//server/share/a.png","time":0}]',
@@ -126,6 +127,7 @@ def test_registration_and_stable_schema(runtime):
     for index in range(1, 10):
         assert inputs["optional"][f"image_{index}"][0] == "IMAGE"
         assert inputs["optional"][f"image_file_{index}"][0][0] == "(none)"
+        assert inputs["optional"][f"use_as_reference_{index}"][0] == ["default", "yes", "no"]
 
 
 def test_upload_and_socket_mix_socket_overrides_file(runtime):
@@ -134,6 +136,7 @@ def test_upload_and_socket_mix_socket_overrides_file(runtime):
         image_1=runtime.image, image_file_1="missing.png", time_1=0,
         image_file_2="b.png", time_2=1.5,
         image_file_3="missing.png", time_3=99,
+        use_as_references=False,
     )
     assert positive == [0, 36]
     assert latent is runtime.latent
@@ -141,7 +144,7 @@ def test_upload_and_socket_mix_socket_overrides_file(runtime):
     assert ("validate", "missing.png") not in runtime.calls
     ref = next(args for name, args in runtime.calls if name == "reference")
     assert ref["length"] == 124
-    assert list(ref["ref_images"]) == ["ref_image_0", "ref_image_1"]
+    assert ref["ref_images"] is None
     assert all(args["latent"] is latent for name, args in runtime.calls if name == "guide")
 
 
@@ -150,6 +153,7 @@ def test_json_overrides_widgets_count_and_connected_images(runtime):
         "clip", "vae", "prompt", reference_count=1,
         reference_json='[{"image":"a.png","time":3},{"image":"b.png","time":0}]',
         image_1=runtime.image, image_file_1="missing.png", time_1=99,
+        use_as_references=False,
     )
     assert result[0] == [72, 0]
     assert [args for name, args in runtime.calls if name == "load"] == ["a.png", "b.png"]
@@ -170,7 +174,7 @@ def test_empty_optional_rows_are_ignored_and_guide_only_supported(runtime):
 ])
 def test_invalid_inputs_fail_before_loading_or_encoding(runtime, inputs, match):
     with pytest.raises(ValueError, match=match):
-        MAIH3Multiframe().prepare("clip", "vae", "prompt", **inputs)
+        MAIH3Multiframe().prepare("clip", "vae", "prompt", use_as_references=False, **inputs)
     assert not any(name in ("load", "reference", "guide") for name, _ in runtime.calls)
 
 
@@ -183,7 +187,7 @@ def test_rejects_image_batch_before_encoding(runtime):
 
 def test_validation_and_active_file_cache_keys(runtime):
     assert MAIH3Multiframe.VALIDATE_INPUTS(image_file_9="deleted.png") is True
-    assert "outside" in MAIH3Multiframe.VALIDATE_INPUTS(reference_json='[{"image":"a.png","time":99}]')
+    assert "outside" in MAIH3Multiframe.VALIDATE_INPUTS(reference_json='[{"image":"a.png","time":99,"use_as_reference":false}]')
     assert MAIH3Multiframe.IS_CHANGED(image_file_1="a.png", image_file_9="missing.png") == ("hash:a.png",)
     assert MAIH3Multiframe.IS_CHANGED(image_1=runtime.image, image_file_1="missing.png") == ()
     assert MAIH3Multiframe.IS_CHANGED(reference_count=1, reference_json='[{"image":"b.png","time":0}]') == ("hash:b.png",)
@@ -209,3 +213,105 @@ def test_valid_json_rejects_too_many_entries():
     import json
     with pytest.raises(ValueError, match="1 to 9"):
         parse_reference_json(json.dumps([{"image": "a.png", "time": i} for i in range(10)]))
+
+
+@pytest.mark.parametrize("value,default,expected", [
+    (None, True, True), ("default", False, False),
+    ("yes", False, True), ("no", True, False),
+    (True, False, True), (False, True, False),
+])
+def test_per_picture_reference_defaults_and_overrides(value, default, expected):
+    assert resolve_reference_flag(value, default) is expected
+
+
+@pytest.mark.parametrize("value", [1, 0, "false", "invalid", [], {}])
+def test_invalid_reference_modes(value):
+    with pytest.raises(ValueError, match="use_as_reference"):
+        resolve_reference_flag(value, True)
+
+
+def test_mixed_per_picture_modes_preserve_all_guides_and_compact_references(runtime):
+    first, second, third = StillImage(), StillImage(), StillImage()
+    positive, latent = MAIH3Multiframe().prepare(
+        "clip", "vae", "prompt", reference_count=3,
+        image_1=first, image_2=second, image_3=third,
+        use_as_reference_1="no", use_as_reference_2="yes", use_as_reference_3="default",
+    )
+    assert positive == [0]
+    assert latent is runtime.latent
+    refs = next(args["ref_images"] for name, args in runtime.calls if name == "reference")
+    assert list(refs) == ["ref_image_0", "ref_image_1"]
+    assert list(refs.values()) == [second, third]
+
+
+def test_explicit_reference_yes_overrides_global_false_and_empty_rows_do_not_shift_modes(runtime):
+    MAIH3Multiframe().prepare("clip", "vae", "prompt", use_as_references=False,
+                             image_2=runtime.image, use_as_reference_2="yes")
+    refs = next(args["ref_images"] for name, args in runtime.calls if name == "reference")
+    assert refs == {"ref_image_0": runtime.image}
+
+
+def test_all_picture_references_disabled_still_anchor_images(runtime):
+    positive, _ = MAIH3Multiframe().prepare("clip", "vae", "prompt", image_1=runtime.image,
+                                           use_as_reference_1="no")
+    assert positive == [0]
+    assert next(args["ref_images"] for name, args in runtime.calls if name == "reference") is None
+
+
+def test_json_reference_flags_override_widgets_and_global_default(runtime):
+    payload = '[{"image":"a.png","time":0,"use_as_reference":false},{"image":"b.png","time":3,"use_as_reference":true}]'
+    assert parse_reference_json(payload) == [("a.png", 0, False), ("b.png", 3, True)]
+    positive, _ = MAIH3Multiframe().prepare("clip", "vae", "prompt", reference_json=payload,
+        use_as_references=False, use_as_reference_1="yes", use_as_reference_2="no")
+    assert positive == [0]
+    refs = next(args["ref_images"] for name, args in runtime.calls if name == "reference")
+    assert list(refs) == ["ref_image_0"]
+
+
+@pytest.mark.parametrize("flag", ['"yes"', '0', 'null', '[]'])
+def test_json_reference_flag_requires_boolean(flag):
+    payload = '[{"image":"a.png","time":0,"use_as_reference":' + flag + '}]'
+    with pytest.raises(ValueError, match="must be true or false"):
+        parse_reference_json(payload)
+    assert "must be true or false" in MAIH3Multiframe.VALIDATE_INPUTS(reference_json=payload)
+
+
+def test_invalid_row_reference_flag_fails_before_encoding(runtime):
+    with pytest.raises(ValueError, match="use_as_reference"):
+        MAIH3Multiframe().prepare("clip", "vae", "prompt", image_file_1="a.png", use_as_reference_1="invalid")
+    assert not runtime.calls
+
+
+def test_reference_only_images_ignore_invalid_times_and_never_add_guides(runtime):
+    positive, latent = MAIH3Multiframe().prepare("clip", "vae", "prompt",
+        image_1=runtime.image, image_2=runtime.image, time_1=-20, time_2="unused")
+    assert positive == []
+    assert latent is runtime.latent
+    assert len(next(args["ref_images"] for name, args in runtime.calls if name == "reference")) == 2
+    assert not any(name == "guide" for name, _ in runtime.calls)
+
+
+def test_mixed_roles_apply_guide_frames_to_the_correct_images(runtime):
+    reference, first, second = StillImage(), StillImage(), StillImage()
+    MAIH3Multiframe().prepare("clip", "vae", "prompt", reference_count=3,
+        image_1=reference, time_1=None, image_2=first, time_2=1.5,
+        image_3=second, time_3=3, use_as_reference_2="no", use_as_reference_3="no")
+    guides = [args for name, args in runtime.calls if name == "guide"]
+    assert [(g["image"], g["frame_idx"]) for g in guides] == [(first, 36), (second, 72)]
+
+
+def test_json_reference_needs_no_time_and_guide_requires_time(runtime):
+    payload = '[{"image":"a.png","use_as_reference":true},{"image":"b.png","time":1.5,"use_as_reference":false}]'
+    assert MAIH3Multiframe.VALIDATE_INPUTS(reference_json=payload) is True
+    positive, _ = MAIH3Multiframe().prepare("clip", "vae", "prompt", reference_json=payload)
+    assert positive == [36]
+    missing = '[{"image":"a.png","use_as_reference":false}]'
+    assert "seconds" in MAIH3Multiframe.VALIDATE_INPUTS(reference_json=missing)
+    with pytest.raises(ValueError, match="seconds"):
+        MAIH3Multiframe().prepare("clip", "vae", "prompt", reference_json=missing)
+
+
+def test_reference_times_do_not_conflict_with_guide_times(runtime):
+    positive, _ = MAIH3Multiframe().prepare("clip", "vae", "prompt", image_1=runtime.image,
+        image_2=runtime.image, time_1=0, time_2=0, use_as_reference_2="no")
+    assert positive == [0]

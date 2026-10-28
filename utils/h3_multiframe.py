@@ -6,6 +6,21 @@ import math
 FPS = 24
 MAX_IMAGES = 9
 NO_IMAGE = "(none)"
+REFERENCE_MODES = ("default", "yes", "no")
+
+
+def resolve_reference_flag(value, default):
+    if not isinstance(default, bool):
+        raise ValueError("use_as_references must be true or false")
+    if value is None or value == "default":
+        return default
+    if isinstance(value, bool):
+        return value
+    if value == "yes":
+        return True
+    if value == "no":
+        return False
+    raise ValueError("use_as_reference must be 'default', 'yes', 'no', or a boolean")
 
 
 def validate_settings(width, height, duration, reference_count, ref_image_size):
@@ -28,7 +43,7 @@ def duration_to_length(duration):
 
 
 def parse_reference_json(reference_json):
-    """Return local file/time pairs, or None when widget/socket inputs should be used."""
+    """Return local file/time/reference triples, or None for widget/socket inputs."""
     if not isinstance(reference_json, str):
         raise ValueError("reference_json must be a JSON string")
     if not reference_json.strip():
@@ -41,15 +56,28 @@ def parse_reference_json(reference_json):
         raise ValueError(f"reference_json must be a list of 1 to {MAX_IMAGES} image/time objects")
     result = []
     for index, entry in enumerate(entries, 1):
-        if not isinstance(entry, dict) or set(entry) != {"image", "time"}:
-            raise ValueError(f"JSON entry {index} must contain exactly 'image' and 'time'")
+        if (not isinstance(entry, dict) or "image" not in entry
+                or set(entry) - {"image", "time", "use_as_reference"}):
+            raise ValueError(f"JSON entry {index} needs 'image', with optional 'time' and 'use_as_reference'")
         path = entry["image"]
         if not isinstance(path, str) or not path.strip() or path == NO_IMAGE:
             raise ValueError(f"JSON entry {index}: image must be a local file path")
         if "://" in path or path.startswith(("\\\\", "//")):
             raise ValueError(f"JSON entry {index}: use local file paths, not URLs or network shares")
-        result.append((path, entry["time"]))
+        flag = entry.get("use_as_reference")
+        if "use_as_reference" in entry and not isinstance(flag, bool):
+            raise ValueError(f"JSON entry {index}: use_as_reference must be true or false")
+        result.append((path, entry.get("time"), flag))
     return result
+
+
+def resolve_picture_roles(entries, default):
+    """Separate reference-only images from timed guides; validate guide times only."""
+    if not entries:
+        raise ValueError("Add at least one reference image or provide reference_json")
+    flags = [resolve_reference_flag(flag, default) for _, _, flag in entries]
+    guide_times = [time for (_, time, _), is_reference in zip(entries, flags) if not is_reference]
+    return flags, guide_times
 
 
 def resolve_guide_frames(times, length):

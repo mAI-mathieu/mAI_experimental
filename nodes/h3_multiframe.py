@@ -1,7 +1,8 @@
 """One-node MiniMax H3 reference conditioning and timed still-image guides."""
 
 from ..utils.h3_multiframe import (
-    MAX_IMAGES, NO_IMAGE, parse_reference_json, resolve_guide_frames, validate_settings,
+    MAX_IMAGES, NO_IMAGE, REFERENCE_MODES, parse_reference_json, resolve_guide_frames,
+    resolve_picture_roles, validate_settings,
 )
 from ..utils.h3_reference_images import H3ImageLoader
 
@@ -24,13 +25,14 @@ def get_h3_nodes():
 def file_entries(reference_json, reference_count, inputs):
     entries = parse_reference_json(reference_json)
     if entries is not None:
-        return [(path, time, None) for path, time in entries]
+        return [(path, time, None, flag) for path, time, flag in entries]
     entries = []
     for index in range(1, reference_count + 1):
         image = inputs.get(f"image_{index}")
         path = inputs.get(f"image_file_{index}", NO_IMAGE)
         if image is not None or path not in (None, "", NO_IMAGE):
-            entries.append((path, inputs.get(f"time_{index}", (index - 1) * 1.5), image))
+            entries.append((path, inputs.get(f"time_{index}", (index - 1) * 1.5), image,
+                            inputs.get(f"use_as_reference_{index}", "default")))
     return entries
 
 
@@ -42,7 +44,8 @@ class MAIH3Multiframe:
     DESCRIPTION = (
         "MiniMax H3 reference images and timed still guides in one node. "
         "Upload/select local images or connect IMAGE sockets. Non-empty JSON overrides rows. "
-        "Times are seconds at 24 fps; Picture tags follow entry order."
+        "Each image is either a semantic reference without a timestamp or a timed image guide. "
+        "Times are seconds at 24 fps; Picture tags number reference-enabled images in entry order."
     )
 
     @classmethod
@@ -56,10 +59,16 @@ class MAIH3Multiframe:
             })
             optional[f"time_{index}"] = ("FLOAT", {
                 "default": (index - 1) * 1.5, "min": 0.0, "max": 15.0, "step": 0.01,
-                "tooltip": "Time in seconds on H3's 24 fps timeline. Rounded to the nearest frame.",
+                "tooltip": "Timed guides only: seconds on H3's 24 fps timeline. Ignored for reference images.",
             })
             optional[f"image_{index}"] = ("IMAGE", {
                 "tooltip": f"Optional single-image input overriding image_file_{index}.",
+            })
+        # Append new fields so the released input order remains intact.
+        for index in range(1, MAX_IMAGES + 1):
+            optional[f"use_as_reference_{index}"] = (list(REFERENCE_MODES), {
+                "default": "default",
+                "tooltip": "yes: reference only, no timestamp; no: timed image conditioning; default: follow use_as_references.",
             })
         return {
             "required": {
@@ -73,7 +82,7 @@ class MAIH3Multiframe:
                 "ref_image_size": (["match", "max"], {"default": "match"}),
                 "use_as_references": ("BOOLEAN", {
                     "default": True,
-                    "tooltip": "Also expose images as semantic <Picture N> references. Off: timed guides only.",
+                    "tooltip": "Default reference use. Each image can override this with use_as_reference_N.",
                 }),
                 "reference_json": ("STRING", {
                     "default": "", "multiline": True,
@@ -95,7 +104,9 @@ class MAIH3Multiframe:
             )
             entries = parse_reference_json(kwargs.get("reference_json", ""))
             if entries is not None:
-                resolve_guide_frames([time for _, time in entries], length)
+                _, times = resolve_picture_roles(entries, kwargs.get("use_as_references", True))
+                if times:
+                    resolve_guide_frames(times, length)
         except ValueError as exc:
             return str(exc)
         return True
@@ -104,7 +115,7 @@ class MAIH3Multiframe:
     def IS_CHANGED(cls, reference_json="", reference_count=2, **kwargs):
         loader = get_image_loader()
         hashes = []
-        for path, _, image in file_entries(reference_json, reference_count, kwargs):
+        for path, _, image, _ in file_entries(reference_json, reference_count, kwargs):
             if image is None:
                 if loader.VALIDATE_INPUTS(path) is not True:
                     return float("nan")
@@ -118,16 +129,19 @@ class MAIH3Multiframe:
         if not isinstance(use_as_references, bool):
             raise ValueError("use_as_references must be true or false")
         entries = file_entries(reference_json, reference_count, kwargs)
-        frames = resolve_guide_frames([time for _, time, _ in entries], length)
+        reference_flags, times = resolve_picture_roles(
+            [(path, time, flag) for path, time, _, flag in entries], use_as_references,
+        )
+        frames = iter(resolve_guide_frames(times, length) if times else [])
         loader = get_image_loader()
         # Validate every path before loading images or running any model encoding.
-        for index, (path, _, image) in enumerate(entries, 1):
+        for index, (path, _, image, _) in enumerate(entries, 1):
             if image is None:
                 error = loader.VALIDATE_INPUTS(path)
                 if error is not True:
                     raise ValueError(f"Image {index}: {error}")
         images = []
-        for index, (path, _, image) in enumerate(entries, 1):
+        for index, (path, _, image, _) in enumerate(entries, 1):
             if image is None:
                 image = loader().load_image(path)[0]
             shape = getattr(image, "shape", ())
@@ -135,13 +149,16 @@ class MAIH3Multiframe:
                 raise ValueError(f"Image {index} must be one RGB/RGBA still image [1,H,W,3/4]; batches and animated files are unsupported")
             images.append(image[..., :3])
         reference_node, guide_node = get_h3_nodes()
-        refs = {f"ref_image_{index}": image for index, image in enumerate(images)} if use_as_references else None
+        reference_images = [image for image, enabled in zip(images, reference_flags) if enabled]
+        refs = {f"ref_image_{index}": image for index, image in enumerate(reference_images)} or None
         positive, latent = reference_node.execute(
             clip=clip, vae=vae, prompt=prompt, width=width, height=height,
             length=length, ref_image_size=ref_image_size, ref_images=refs,
         ).result
-        for image, frame in zip(images, frames):
+        for image, is_reference in zip(images, reference_flags):
+            if is_reference:
+                continue
             positive = guide_node.execute(
-                positive=positive, latent=latent, vae=vae, image=image, frame_idx=frame,
+                positive=positive, latent=latent, vae=vae, image=image, frame_idx=next(frames),
             ).result[0]
         return positive, latent
